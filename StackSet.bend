@@ -10,7 +10,8 @@
 # screens (visible), the workspaces shown nowhere (hidden), and the
 # floating windows' places. Every operation here is a function of those
 # values, as XMonad.StackSet's is of its own; the laws (PROPOSED.bend,
-# proved in PROOF.bend) and tests/Props.bend say which properties hold.
+# proved in PROOF.bend) say which properties hold, and tests/diff.sh checks
+# the answers against XMonad.StackSet's own.
 #
 # Haskell's classes become templates: a function that Haskell gives Eq a
 # takes ~eqA: A -> A -> Bool, and one given Ord a takes ~cmpA: A -> A -> Cmp

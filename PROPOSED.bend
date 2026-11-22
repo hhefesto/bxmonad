@@ -384,3 +384,20 @@ law float_sink:
   for +refl: {cmpA(w, w) == EQ{} : Cmp}
   for h: {W.Float.lookup(~A, ~cmpA, w, W.floating(I, L, A, S, D, s)) == None{} : Maybe<&2, W.RationalRect>}
   {W.sink(~A, ~cmpA, I, L, S, D, w, W.float(~A, ~cmpA, I, L, S, D, w, r, s)) == s : W.StackSet<I, L, A, S, D>}
+
+# Viewing
+# -------
+
+# prop_view_idem: viewing a workspace twice is viewing it once. (No
+# hypothesis: a workspace view brings in is one whose tag == says is i.)
+law view_idem:
+  for ~I: Data
+  for ~eqI: I -> I -> Bool
+  for ~S: Data
+  for ~eqS: S -> S -> Bool
+  for -L: Data
+  for -A: Data
+  for -D: Data
+  for +i: I
+  for +s: W.StackSet<I, L, A, S, D>
+  {W.view(~I, ~eqI, ~S, ~eqS, L, A, D, i, W.view(~I, ~eqI, ~S, ~eqS, L, A, D, i, s)) == W.view(~I, ~eqI, ~S, ~eqS, L, A, D, i, s) : W.StackSet<I, L, A, S, D>}

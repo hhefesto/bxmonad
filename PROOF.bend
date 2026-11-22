@@ -765,3 +765,293 @@ def Proposed.float_sink(A, cmpA, I, L, S, D, w, r, s, refl, h):
     case W.StackSet{c, v, hh, f}:
       %del_ins(A, cmpA, w, r, f, refl, h) : {W.sink(~A, ~cmpA, I, L, S, D, w, W.float(~A, ~cmpA, I, L, S, D, w, r, W.StackSet{c, v, hh, f})) == W.StackSet{c, v, hh, _} : W.StackSet<I, L, A, S, D>}
       {==}
+
+# Viewing
+# -------
+
+def none.ty(-A: Data, m: Maybe<&2, A>) -> Type:
+  match m:
+    case None{}:
+      Unit
+    case Some{z}:
+      Empty
+
+law none_clash:
+  for -A: Data
+  for -x: A
+  for h: {None{} == Some{x} : Maybe<&2, A>}
+  Empty
+
+def none_clash(A, x, h):
+  %h : none.ty(A, _)
+  Unit{}
+
+def unSome(-A: Data, m: Maybe<&2, A>, d: A) -> A:
+  match m:
+    case None{}:
+      d
+    case Some{z}:
+      z
+
+# what findTag finds has tag i (by ==)
+law findTag_hit.c:
+  for ~I: Data
+  for ~eqI: I -> I -> Bool
+  for -L: Data
+  for -A: Data
+  for -S: Data
+  for -D: Data
+  for -i: I
+  for -y: W.Screen<I, L, A, S, D>
+  for -rest: List<&2, W.Screen<I, L, A, S, D>>
+  for -x: W.Screen<I, L, A, S, D>
+  for ih: {W.Screen.findTag(~I, ~eqI, L, A, S, D, i, rest) == Some{x} : Maybe<&2, W.Screen<I, L, A, S, D>>} -> {eqI(i, W.Workspace.tag(I, L, A, W.Screen.workspace(I, L, A, S, D, x))) == True{} : Bool}
+  for b: Bool
+  for eb: {eqI(i, W.Workspace.tag(I, L, A, W.Screen.workspace(I, L, A, S, D, y))) == b : Bool}
+  for h: {List.find.if(W.Screen<I, L, A, S, D>, y, q => W.Screen.findTag(~I, ~eqI, L, A, S, D, i, rest), b) == Some{x} : Maybe<&2, W.Screen<I, L, A, S, D>>}
+  {eqI(i, W.Workspace.tag(I, L, A, W.Screen.workspace(I, L, A, S, D, x))) == True{} : Bool}
+
+def findTag_hit.c(I, eqI, L, A, S, D, i, y, rest, x, ih, b, eb, h):
+  match b:
+    case True{}:
+      %Equal.cong(Maybe<&2, W.Screen<I, L, A, S, D>>, W.Screen<I, L, A, S, D>, m => unSome(W.Screen<I, L, A, S, D>, m, y), Some{y}, Some{x}, h) : {eqI(i, W.Workspace.tag(I, L, A, W.Screen.workspace(I, L, A, S, D, _))) == True{} : Bool}
+      eb
+    case False{}:
+      ih(h)
+
+law findTag_hit:
+  for ~I: Data
+  for ~eqI: I -> I -> Bool
+  for -L: Data
+  for -A: Data
+  for -S: Data
+  for -D: Data
+  for +i: I
+  for xs: List<&2, W.Screen<I, L, A, S, D>>
+  for -x: W.Screen<I, L, A, S, D>
+  for h: {W.Screen.findTag(~I, ~eqI, L, A, S, D, i, xs) == Some{x} : Maybe<&2, W.Screen<I, L, A, S, D>>}
+  {eqI(i, W.Workspace.tag(I, L, A, W.Screen.workspace(I, L, A, S, D, x))) == True{} : Bool}
+
+def findTag_hit(I, eqI, L, A, S, D, i, xs, x, h):
+  match xs:
+    case Nil{}:
+      ex_falso({eqI(i, W.Workspace.tag(I, L, A, W.Screen.workspace(I, L, A, S, D, x))) == True{} : Bool}, none_clash(W.Screen<I, L, A, S, D>, x, h))
+    case +y <> rest:
+      findTag_hit.c(I, eqI, L, A, S, D, i, y, rest, x, h2 => findTag_hit(I, eqI, L, A, S, D, i, rest, x, h2), eqI(i, W.Workspace.tag(I, L, A, W.Screen.workspace(I, L, A, S, D, y))), {==}, h)
+
+# what find finds among the workspaces has tag i (by ==)
+law find_hit.c:
+  for ~I: Data
+  for ~eqI: I -> I -> Bool
+  for -L: Data
+  for -A: Data
+  for -i: I
+  for -y: W.Workspace<I, L, A>
+  for -rest: List<&2, W.Workspace<I, L, A>>
+  for -x: W.Workspace<I, L, A>
+  for ih: {W.Workspace.find(~I, ~eqI, L, A, i, rest) == Some{x} : Maybe<&2, W.Workspace<I, L, A>>} -> {eqI(i, W.Workspace.tag(I, L, A, x)) == True{} : Bool}
+  for b: Bool
+  for eb: {eqI(i, W.Workspace.tag(I, L, A, y)) == b : Bool}
+  for h: {List.find.if(W.Workspace<I, L, A>, y, q => W.Workspace.find(~I, ~eqI, L, A, i, rest), b) == Some{x} : Maybe<&2, W.Workspace<I, L, A>>}
+  {eqI(i, W.Workspace.tag(I, L, A, x)) == True{} : Bool}
+
+def find_hit.c(I, eqI, L, A, i, y, rest, x, ih, b, eb, h):
+  match b:
+    case True{}:
+      %Equal.cong(Maybe<&2, W.Workspace<I, L, A>>, W.Workspace<I, L, A>, m => unSome(W.Workspace<I, L, A>, m, y), Some{y}, Some{x}, h) : {eqI(i, W.Workspace.tag(I, L, A, _)) == True{} : Bool}
+      eb
+    case False{}:
+      ih(h)
+
+law find_hit:
+  for ~I: Data
+  for ~eqI: I -> I -> Bool
+  for -L: Data
+  for -A: Data
+  for +i: I
+  for xs: List<&2, W.Workspace<I, L, A>>
+  for -x: W.Workspace<I, L, A>
+  for h: {W.Workspace.find(~I, ~eqI, L, A, i, xs) == Some{x} : Maybe<&2, W.Workspace<I, L, A>>}
+  {eqI(i, W.Workspace.tag(I, L, A, x)) == True{} : Bool}
+
+def find_hit(I, eqI, L, A, i, xs, x, h):
+  match xs:
+    case Nil{}:
+      ex_falso({eqI(i, W.Workspace.tag(I, L, A, x)) == True{} : Bool}, none_clash(W.Workspace<I, L, A>, x, h))
+    case +y <> rest:
+      find_hit.c(I, eqI, L, A, i, y, rest, x, h2 => find_hit(I, eqI, L, A, i, rest, x, h2), eqI(i, W.Workspace.tag(I, L, A, y)), {==}, h)
+
+# view i of a set whose current tag is i (by ==) is the set
+law view_true:
+  for ~I: Data
+  for ~eqI: I -> I -> Bool
+  for ~S: Data
+  for ~eqS: S -> S -> Bool
+  for -L: Data
+  for -A: Data
+  for -D: Data
+  for -i: I
+  for -r: W.StackSet<I, L, A, S, D>
+  for h: {eqI(i, W.currentTag(I, L, A, S, D, r)) == True{} : Bool}
+  {W.view(~I, ~eqI, ~S, ~eqS, L, A, D, i, r) == r : W.StackSet<I, L, A, S, D>}
+
+def view_true(I, eqI, S, eqS, L, A, D, i, r, h):
+  %Equal.sym(Bool, eqI(i, W.currentTag(I, L, A, S, D, r)), True{}, h) : {W.view.cur(~I, ~eqI, ~S, ~eqS, L, A, D, _, i, r) == r : W.StackSet<I, L, A, S, D>}
+  {==}
+
+# else view looks among the visible screens
+law view_false:
+  for ~I: Data
+  for ~eqI: I -> I -> Bool
+  for ~S: Data
+  for ~eqS: S -> S -> Bool
+  for -L: Data
+  for -A: Data
+  for -D: Data
+  for -i: I
+  for -s: W.StackSet<I, L, A, S, D>
+  for h: {eqI(i, W.currentTag(I, L, A, S, D, s)) == False{} : Bool}
+  {W.view(~I, ~eqI, ~S, ~eqS, L, A, D, i, s) == W.view.vis(~I, ~eqI, ~S, ~eqS, L, A, D, W.Screen.findTag(~I, ~eqI, L, A, S, D, i, W.visible(I, L, A, S, D, s)), i, s) : W.StackSet<I, L, A, S, D>}
+
+def view_false(I, eqI, S, eqS, L, A, D, i, s, h):
+  %Equal.sym(Bool, eqI(i, W.currentTag(I, L, A, S, D, s)), False{}, h) : {W.view.cur(~I, ~eqI, ~S, ~eqS, L, A, D, _, i, s) == W.view.vis(~I, ~eqI, ~S, ~eqS, L, A, D, W.Screen.findTag(~I, ~eqI, L, A, S, D, i, W.visible(I, L, A, S, D, s)), i, s) : W.StackSet<I, L, A, S, D>}
+  {==}
+
+# a workspace brought in from the hidden ones, tagged i, is current: a second
+# view i changes nothing
+law view_hid_some:
+  for ~I: Data
+  for ~eqI: I -> I -> Bool
+  for ~S: Data
+  for ~eqS: S -> S -> Bool
+  for -L: Data
+  for -A: Data
+  for -D: Data
+  for +i: I
+  for s: W.StackSet<I, L, A, S, D>
+  for -x: W.Workspace<I, L, A>
+  for h: {eqI(i, W.Workspace.tag(I, L, A, x)) == True{} : Bool}
+  {W.view(~I, ~eqI, ~S, ~eqS, L, A, D, i, W.view.hid(~I, ~eqI, L, A, S, D, Some{x}, s)) == W.view.hid(~I, ~eqI, L, A, S, D, Some{x}, s) : W.StackSet<I, L, A, S, D>}
+
+def view_hid_some(I, eqI, S, eqS, L, A, D, i, s, x, h):
+  match s:
+    case W.StackSet{W.Screen{w, sc, sd}, v, hh, fl}:
+      view_true(I, eqI, S, eqS, L, A, D, i, W.StackSet{W.Screen{x, sc, sd}, v, w <> W.Workspace.delete(~I, ~eqI, L, A, W.Workspace.tag(I, L, A, x), hh), fl}, h)
+
+# so is one brought in from a visible screen
+law view_vis_some:
+  for ~I: Data
+  for ~eqI: I -> I -> Bool
+  for ~S: Data
+  for ~eqS: S -> S -> Bool
+  for -L: Data
+  for -A: Data
+  for -D: Data
+  for +i: I
+  for s: W.StackSet<I, L, A, S, D>
+  for -x: W.Screen<I, L, A, S, D>
+  for h: {eqI(i, W.Workspace.tag(I, L, A, W.Screen.workspace(I, L, A, S, D, x))) == True{} : Bool}
+  {W.view(~I, ~eqI, ~S, ~eqS, L, A, D, i, W.view.vis(~I, ~eqI, ~S, ~eqS, L, A, D, Some{x}, i, s)) == W.view.vis(~I, ~eqI, ~S, ~eqS, L, A, D, Some{x}, i, s) : W.StackSet<I, L, A, S, D>}
+
+def view_vis_some(I, eqI, S, eqS, L, A, D, i, s, x, h):
+  match s:
+    case W.StackSet{c, v, hh, fl}:
+      view_true(I, eqI, S, eqS, L, A, D, i, W.StackSet{x, c <> W.Screen.delete(~S, ~eqS, I, L, A, D, W.Screen.screen(I, L, A, S, D, x), v), hh, fl}, h)
+
+# no workspace tagged i anywhere: view i changes nothing
+law view_none:
+  for ~I: Data
+  for ~eqI: I -> I -> Bool
+  for ~S: Data
+  for ~eqS: S -> S -> Bool
+  for -L: Data
+  for -A: Data
+  for -D: Data
+  for -i: I
+  for -s: W.StackSet<I, L, A, S, D>
+  for e: {eqI(i, W.currentTag(I, L, A, S, D, s)) == False{} : Bool}
+  for em: {W.Screen.findTag(~I, ~eqI, L, A, S, D, i, W.visible(I, L, A, S, D, s)) == None{} : Maybe<&2, W.Screen<I, L, A, S, D>>}
+  for ek: {W.Workspace.find(~I, ~eqI, L, A, i, W.hidden(I, L, A, S, D, s)) == None{} : Maybe<&2, W.Workspace<I, L, A>>}
+  {W.view(~I, ~eqI, ~S, ~eqS, L, A, D, i, s) == s : W.StackSet<I, L, A, S, D>}
+
+def view_none(I, eqI, S, eqS, L, A, D, i, s, e, em, ek):
+  %Equal.sym(W.StackSet<I, L, A, S, D>, W.view(~I, ~eqI, ~S, ~eqS, L, A, D, i, s), W.view.vis(~I, ~eqI, ~S, ~eqS, L, A, D, W.Screen.findTag(~I, ~eqI, L, A, S, D, i, W.visible(I, L, A, S, D, s)), i, s), view_false(I, eqI, S, eqS, L, A, D, i, s, e)) : {_ == s : W.StackSet<I, L, A, S, D>}
+  %Equal.sym(Maybe<&2, W.Screen<I, L, A, S, D>>, W.Screen.findTag(~I, ~eqI, L, A, S, D, i, W.visible(I, L, A, S, D, s)), None{}, em) : {W.view.vis(~I, ~eqI, ~S, ~eqS, L, A, D, _, i, s) == s : W.StackSet<I, L, A, S, D>}
+  %Equal.sym(Maybe<&2, W.Workspace<I, L, A>>, W.Workspace.find(~I, ~eqI, L, A, i, W.hidden(I, L, A, S, D, s)), None{}, ek) : {W.view.hid(~I, ~eqI, L, A, S, D, _, s) == s : W.StackSet<I, L, A, S, D>}
+  {==}
+
+law view_idem.k:
+  for ~I: Data
+  for ~eqI: I -> I -> Bool
+  for ~S: Data
+  for ~eqS: S -> S -> Bool
+  for -L: Data
+  for -A: Data
+  for -D: Data
+  for +i: I
+  for +s: W.StackSet<I, L, A, S, D>
+  for +e: {eqI(i, W.currentTag(I, L, A, S, D, s)) == False{} : Bool}
+  for +em: {W.Screen.findTag(~I, ~eqI, L, A, S, D, i, W.visible(I, L, A, S, D, s)) == None{} : Maybe<&2, W.Screen<I, L, A, S, D>>}
+  for k: Maybe<&2, W.Workspace<I, L, A>>
+  for +ek: {W.Workspace.find(~I, ~eqI, L, A, i, W.hidden(I, L, A, S, D, s)) == k : Maybe<&2, W.Workspace<I, L, A>>}
+  {W.view(~I, ~eqI, ~S, ~eqS, L, A, D, i, W.view(~I, ~eqI, ~S, ~eqS, L, A, D, i, s)) == W.view(~I, ~eqI, ~S, ~eqS, L, A, D, i, s) : W.StackSet<I, L, A, S, D>}
+
+def view_idem.k(I, eqI, S, eqS, L, A, D, i, s, e, em, k, ek):
+  match k:
+    case None{}:
+      %Equal.sym(W.StackSet<I, L, A, S, D>, W.view(~I, ~eqI, ~S, ~eqS, L, A, D, i, s), s, view_none(I, eqI, S, eqS, L, A, D, i, s, e, em, ek)) : {W.view(~I, ~eqI, ~S, ~eqS, L, A, D, i, _) == _ : W.StackSet<I, L, A, S, D>}
+      view_none(I, eqI, S, eqS, L, A, D, i, s, e, em, ek)
+    case Some{x}:
+      %Equal.sym(W.StackSet<I, L, A, S, D>, W.view(~I, ~eqI, ~S, ~eqS, L, A, D, i, s), W.view.vis(~I, ~eqI, ~S, ~eqS, L, A, D, W.Screen.findTag(~I, ~eqI, L, A, S, D, i, W.visible(I, L, A, S, D, s)), i, s), view_false(I, eqI, S, eqS, L, A, D, i, s, e)) : {W.view(~I, ~eqI, ~S, ~eqS, L, A, D, i, _) == _ : W.StackSet<I, L, A, S, D>}
+      %Equal.sym(Maybe<&2, W.Screen<I, L, A, S, D>>, W.Screen.findTag(~I, ~eqI, L, A, S, D, i, W.visible(I, L, A, S, D, s)), None{}, em) : {W.view(~I, ~eqI, ~S, ~eqS, L, A, D, i, W.view.vis(~I, ~eqI, ~S, ~eqS, L, A, D, _, i, s)) == W.view.vis(~I, ~eqI, ~S, ~eqS, L, A, D, _, i, s) : W.StackSet<I, L, A, S, D>}
+      %Equal.sym(Maybe<&2, W.Workspace<I, L, A>>, W.Workspace.find(~I, ~eqI, L, A, i, W.hidden(I, L, A, S, D, s)), Some{x}, ek) : {W.view(~I, ~eqI, ~S, ~eqS, L, A, D, i, W.view.hid(~I, ~eqI, L, A, S, D, _, s)) == W.view.hid(~I, ~eqI, L, A, S, D, _, s) : W.StackSet<I, L, A, S, D>}
+      view_hid_some(I, eqI, S, eqS, L, A, D, i, s, x, find_hit(I, eqI, L, A, i, W.hidden(I, L, A, S, D, s), x, ek))
+
+law view_idem.m:
+  for ~I: Data
+  for ~eqI: I -> I -> Bool
+  for ~S: Data
+  for ~eqS: S -> S -> Bool
+  for -L: Data
+  for -A: Data
+  for -D: Data
+  for +i: I
+  for +s: W.StackSet<I, L, A, S, D>
+  for +e: {eqI(i, W.currentTag(I, L, A, S, D, s)) == False{} : Bool}
+  for m: Maybe<&2, W.Screen<I, L, A, S, D>>
+  for +em: {W.Screen.findTag(~I, ~eqI, L, A, S, D, i, W.visible(I, L, A, S, D, s)) == m : Maybe<&2, W.Screen<I, L, A, S, D>>}
+  {W.view(~I, ~eqI, ~S, ~eqS, L, A, D, i, W.view(~I, ~eqI, ~S, ~eqS, L, A, D, i, s)) == W.view(~I, ~eqI, ~S, ~eqS, L, A, D, i, s) : W.StackSet<I, L, A, S, D>}
+
+def view_idem.m(I, eqI, S, eqS, L, A, D, i, s, e, m, em):
+  match m:
+    case None{}:
+      view_idem.k(I, eqI, S, eqS, L, A, D, i, s, e, em, W.Workspace.find(~I, ~eqI, L, A, i, W.hidden(I, L, A, S, D, s)), {==})
+    case Some{x}:
+      %Equal.sym(W.StackSet<I, L, A, S, D>, W.view(~I, ~eqI, ~S, ~eqS, L, A, D, i, s), W.view.vis(~I, ~eqI, ~S, ~eqS, L, A, D, W.Screen.findTag(~I, ~eqI, L, A, S, D, i, W.visible(I, L, A, S, D, s)), i, s), view_false(I, eqI, S, eqS, L, A, D, i, s, e)) : {W.view(~I, ~eqI, ~S, ~eqS, L, A, D, i, _) == _ : W.StackSet<I, L, A, S, D>}
+      %Equal.sym(Maybe<&2, W.Screen<I, L, A, S, D>>, W.Screen.findTag(~I, ~eqI, L, A, S, D, i, W.visible(I, L, A, S, D, s)), Some{x}, em) : {W.view(~I, ~eqI, ~S, ~eqS, L, A, D, i, W.view.vis(~I, ~eqI, ~S, ~eqS, L, A, D, _, i, s)) == W.view.vis(~I, ~eqI, ~S, ~eqS, L, A, D, _, i, s) : W.StackSet<I, L, A, S, D>}
+      view_vis_some(I, eqI, S, eqS, L, A, D, i, s, x, findTag_hit(I, eqI, L, A, S, D, i, W.visible(I, L, A, S, D, s), x, em))
+
+law view_idem.b:
+  for ~I: Data
+  for ~eqI: I -> I -> Bool
+  for ~S: Data
+  for ~eqS: S -> S -> Bool
+  for -L: Data
+  for -A: Data
+  for -D: Data
+  for +i: I
+  for +s: W.StackSet<I, L, A, S, D>
+  for b: Bool
+  for +e: {eqI(i, W.currentTag(I, L, A, S, D, s)) == b : Bool}
+  {W.view(~I, ~eqI, ~S, ~eqS, L, A, D, i, W.view(~I, ~eqI, ~S, ~eqS, L, A, D, i, s)) == W.view(~I, ~eqI, ~S, ~eqS, L, A, D, i, s) : W.StackSet<I, L, A, S, D>}
+
+def view_idem.b(I, eqI, S, eqS, L, A, D, i, s, b, e):
+  match b:
+    case True{}:
+      %Equal.sym(W.StackSet<I, L, A, S, D>, W.view(~I, ~eqI, ~S, ~eqS, L, A, D, i, s), s, view_true(I, eqI, S, eqS, L, A, D, i, s, e)) : {W.view(~I, ~eqI, ~S, ~eqS, L, A, D, i, _) == _ : W.StackSet<I, L, A, S, D>}
+      view_true(I, eqI, S, eqS, L, A, D, i, s, e)
+    case False{}:
+      view_idem.m(I, eqI, S, eqS, L, A, D, i, s, e, W.Screen.findTag(~I, ~eqI, L, A, S, D, i, W.visible(I, L, A, S, D, s)), {==})
+
+def Proposed.view_idem(I, eqI, S, eqS, L, A, D, i, s):
+  view_idem.b(I, eqI, S, eqS, L, A, D, i, s, eqI(i, W.currentTag(I, L, A, S, D, s)), {==})
