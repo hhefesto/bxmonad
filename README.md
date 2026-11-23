@@ -152,3 +152,8 @@ class).
   every one the same on both. The comparison does catch a wrong window
   manager: with hide's `selectInput` left unmasked (one line of
   Operations.bend), seed 1 differs at 43 of 80 steps.
+
+## Licence
+
+BSD 3-Clause, as xmonad itself: see `LICENSE`, which keeps xmonad's
+copyright notices beside this port's.
