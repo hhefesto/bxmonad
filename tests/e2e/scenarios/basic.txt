@@ -1,0 +1,30 @@
+# three windows, the layouts, focus and swaps, workspaces, a kill
+spawn t1
+spawn t2
+spawn t3
+key alt+space
+key alt+space
+key alt+space
+key alt+j
+key alt+Return
+key alt+l
+key alt+l
+key alt+comma
+key alt+period
+key alt+shift+j
+key alt+2
+spawn t4
+key alt+1
+key alt+shift+2
+key alt+2
+key alt+shift+c
+key alt+1
+spawn t5 fixed 300 200
+spawn t6 transient t1
+key alt+t
+pointer 100 100
+pointer 1000 700
+click 1
+withdraw t2
+destroy t3
+key alt+shift+space

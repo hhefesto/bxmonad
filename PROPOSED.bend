@@ -8,6 +8,8 @@ import Base
 import ./StackSet.bend as W
 import ./Num.bend as N
 import ./Layout.bend as L
+import ./Core.bend as C
+import ./Operations.bend as O
 
 # Stacks
 # ------
@@ -592,3 +594,163 @@ law tile_count:
 # (Tall ||| Full) ||| Mirror Tall goes Tall, Full, Mirror Tall, Tall
 law nested_cycle:
   {Cycle.descs(4n, L.Choose{L.CL{}, L.Choose{L.CL{}, L.Layout.tiled(), L.Full{}}, L.Mirror{L.Layout.tiled()}}) == ["Tall", "Full", "Mirror Tall", "Tall"] : List<&2, String>}
+
+# The window manager (Core.bend, Operations.bend)
+# -----------------------------------------------
+
+# An event xmonad does not handle changes nothing and asks X for nothing.
+law handle_other:
+  for c: C.Conf
+  for st: C.XState
+  {O.handle(c, st, C.EvOther{}) == O.nop(st) : C.Step}
+
+# windows f leaves the windowset at f's answer, the layouts of the
+# workspaces it hid told Hide (xmonad's windows: modify, then
+# sendMessageWithNoRefresh Hide to each).
+law windows_ws:
+  for c: C.Conf
+  for +old: C.WindowSet()
+  for m: List<&2, U32>
+  for p: List<&2, C.Pending>
+  for n: U32
+  for +new: C.WindowSet()
+  for mouse: Bool
+  {O.st.ws(O.step.st(O.windows(c, C.XState{old, m, p, n}, new, mouse))) == O.ws.hideLayouts(O.scr.tags(C.ws.screens(old)), new) : C.WindowSet()}
+
+# ... and keeps the numlock mask.
+law windows_numlock:
+  for c: C.Conf
+  for old: C.WindowSet()
+  for m: List<&2, U32>
+  for p: List<&2, C.Pending>
+  for +n: U32
+  for new: C.WindowSet()
+  for mouse: Bool
+  {O.st.numlock(O.step.st(O.windows(c, C.XState{old, m, p, n}, new, mouse))) == n : U32}
+
+# On one screen with no floating windows, the windows go where the layout
+# puts them, all of the workspace's (windows: flt is empty, tiled the
+# whole stack).
+law one_screen_tiles:
+  for t: String
+  for l: L.Layout
+  for sid: Nat
+  for +r: L.Rectangle
+  for +st: Maybe<&2, W.Stack<U32>>
+  {O.place.screens(Nil{}, [W.Screen{W.Workspace{t, l, st}, sid, r}], Nil{}) == [L.Layout.run(U32, l, r, st)] : List<&2, List<&2, L.Place<U32>>>}
+
+# XMonad.Config's keys (mod is Alt, mask 8; shift is 1): mod-j focusDown,
+# mod-shift-c kill, mod-space NextLayout, mod-shift-q quit, mod-3 shows
+# workspace 3, mod-shift-9 sends the window to workspace 9.
+law key_focusDown:
+  {C.keys.find(8, 106, C.keys()) == Some{C.AFocusDown{}} : Maybe<&2, C.Act>}
+
+law key_kill:
+  {C.keys.find(9, 99, C.keys()) == Some{C.AKill{}} : Maybe<&2, C.Act>}
+
+law key_nextLayout:
+  {C.keys.find(8, 32, C.keys()) == Some{C.AMsg{L.NextLayout{}}} : Maybe<&2, C.Act>}
+
+law key_quit:
+  {C.keys.find(9, 113, C.keys()) == Some{C.AQuit{}} : Maybe<&2, C.Act>}
+
+law key_view3:
+  {C.keys.find(8, 51, C.keys()) == Some{C.AGreedyView{"3"}} : Maybe<&2, C.Act>}
+
+law key_shift9:
+  {C.keys.find(9, 57, C.keys()) == Some{C.AShift{"9"}} : Maybe<&2, C.Act>}
+
+# NumLock (here mod2, 16) and CapsLock (2) held change no binding.
+law cleanMask_locks:
+  {C.cleanMask(16, 26) == 8 : U32}
+
+# scan keeps a window that is viewable or iconic and not override-redirect.
+law scan_override:
+  for w: U32
+  for m: U32
+  for s: U32
+  for rest: List<&2, U32>
+  {O.scan.ok(w <> 1 <> m <> s <> rest) == O.scan.ok(rest) : List<&2, U32>}
+
+law scan_viewable:
+  for w: U32
+  for s: U32
+  for rest: List<&2, U32>
+  {O.scan.ok(w <> 0 <> 2 <> s <> rest) == w <> O.scan.ok(rest) : List<&2, U32>}
+
+law scan_iconic:
+  for w: U32
+  for rest: List<&2, U32>
+  {O.scan.ok(w <> 0 <> 0 <> 3 <> rest) == w <> O.scan.ok(rest) : List<&2, U32>}
+
+law scan_withdrawn:
+  for w: U32
+  for rest: List<&2, U32>
+  {O.scan.ok(w <> 0 <> 0 <> 0 <> rest) == O.scan.ok(rest) : List<&2, U32>}
+
+# setFocusX: a window with no WM_HINTS gets the input focus; one whose
+# WM_HINTS say it takes no input does not; one taking WM_TAKE_FOCUS is
+# also sent it, with the event's time.
+law focusX_plain:
+  for s: U32
+  for pr: U32
+  for del: U32
+  for tf: U32
+  for +w: U32
+  for t: U32
+  {O.focusX(O.Atoms{s, pr, del, tf}, w, t, Nil{}, Nil{}) == [C.SetFocus{w}] : List<&2, C.Cmd>}
+
+law focusX_noinput:
+  for s: U32
+  for pr: U32
+  for del: U32
+  for tf: U32
+  for +w: U32
+  for t: U32
+  {O.focusX(O.Atoms{s, pr, del, tf}, w, t, [1, 0], Nil{}) == Nil{} : List<&2, C.Cmd>}
+
+law focusX_takeFocus:
+  for s: U32
+  for +pr: U32
+  for del: U32
+  for +tf: U32
+  for +w: U32
+  for +t: U32
+  {O.focusX(O.Atoms{s, pr, del, tf}, w, t, Nil{}, [tf]) == [C.SetFocus{w}, C.SendMessage{w, pr, tf, t}] : List<&2, C.Cmd>}
+
+# killWindow: WM_DELETE_WINDOW to a window that takes it, else XKillClient.
+law kill_delete:
+  for s: U32
+  for +pr: U32
+  for +del: U32
+  for tf: U32
+  for +w: U32
+  {O.kill(O.Atoms{s, pr, del, tf}, w, [del]) == [C.SendMessage{w, pr, del, 0}] : List<&2, C.Cmd>}
+
+law kill_client:
+  for s: U32
+  for pr: U32
+  for del: U32
+  for tf: U32
+  for +w: U32
+  {O.kill(O.Atoms{s, pr, del, tf}, w, Nil{}) == [C.KillClient{w}] : List<&2, C.Cmd>}
+
+# isFixedSize: no WM_NORMAL_HINTS is not fixed; min = max is.
+law not_fixed_without_hints:
+  {O.hints.fixed(C.Hints.none()) == False{} : Bool}
+
+law fixed_min_max:
+  for +w: U32
+  for +h: U32
+  {O.hints.fixed(C.Hints{48, w, h, w, h, 0, 0, 0, 0, 0, 0, 0, 0}) == True{} : Bool}
+
+# applySizeHintsContents with no hints: the size, at least 1 x 1.
+law contents_no_hints:
+  for +w: U32
+  for +h: U32
+  {O.hints.contents(C.Hints.none(), w, h) == O.Dim{O.u32.max(1, w), O.u32.max(1, h)} : O.Dim}
+
+# waitingUnmap: a window hidden once waits for one UnmapNotify.
+law pending_once:
+  for +w: U32
+  {O.pending.get(w, O.pending.inc(w, Nil{})) == 1n : Nat}

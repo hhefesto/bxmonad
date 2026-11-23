@@ -5,6 +5,8 @@ import Base
 import ./StackSet.bend as W
 import ./Num.bend as N
 import ./Layout.bend as L
+import ./Core.bend as C
+import ./Operations.bend as O
 import ./PROPOSED.bend as Proposed
 
 # Lists
@@ -1418,4 +1420,165 @@ def Proposed.tall_count(A, nm, d, frac, r, s, h0, h1):
   zip_len(A, W.Stack.integrate(A, s), L.tile(frac, r, N.Int.of(nm), List.length(&2, A, W.Stack.integrate(A, s))), tile_fits(frac, r, nm, List.length(&2, A, W.Stack.integrate(A, s))))
 
 def Proposed.nested_cycle():
+  {==}
+
+# The window manager
+# ------------------
+
+# U32's == is reflexive: Word.cmp of a word and itself is EQ, bit by bit.
+law bool_cmp_refl:
+  for +b: Bool
+  {Bool.cmp(b, b) == EQ{} : Cmp}
+
+def bool_cmp_refl(b):
+  match b:
+    case True{}:
+      {==}
+    case False{}:
+      {==}
+
+law word_cmp_refl:
+  for n: Nat
+  for +a: Word(n)
+  {Word.cmp(n, a, a) == EQ{} : Cmp}
+
+def word_cmp_refl(n, a):
+  match n:
+    case 0n:
+      {==}
+    case 1n+p:
+      match a:
+        case WCon{+h, +t}:
+          %Equal.sym(Cmp, Word.cmp(p, t, t), EQ{}, word_cmp_refl(p, t)) : {Word.cmp.fin(h, h, _) == EQ{} : Cmp}
+          bool_cmp_refl(h)
+
+law u32_eq_refl:
+  for +w: U32
+  {U32.is_eq(w, w) == True{} : Bool}
+
+def u32_eq_refl(w):
+  match w:
+    case U32{+x}:
+      %Equal.sym(Cmp, Word.cmp(32n, x, x), EQ{}, word_cmp_refl(32n, x)) : {Cmp.is_eq(_) == True{} : Bool}
+      {==}
+
+def Proposed.handle_other(c, st):
+  {==}
+
+def Proposed.windows_ws(c, old, m, p, n, new, mouse):
+  {==}
+
+def Proposed.windows_numlock(c, old, m, p, n, new, mouse):
+  {==}
+
+# no floating windows: none placed as floating
+law flt_none:
+  for +r: L.Rectangle
+  for +vis: List<&2, U32>
+  for xs: List<&2, U32>
+  {O.flt.places(r, Nil{}, vis, xs) == Nil{} : List<&2, L.Place<U32>>}
+
+def flt_none(r, vis, xs):
+  match xs:
+    case Nil{}:
+      {==}
+    case w <> rest:
+      flt_none(r, vis, rest)
+
+# no floating windows and none shown before: the filter keeps every window
+law keep_all:
+  for xs: List<&2, U32>
+  {W.List.keep(~U32, ~O.Excl, ~O.tiled.p, O.Excl{Nil{}, Nil{}}, xs) == xs : List<&2, U32>}
+
+def keep_all(xs):
+  match xs:
+    case Nil{}:
+      {==}
+    case x <> rest:
+      %keep_all(rest) : {W.List.keep(~U32, ~O.Excl, ~O.tiled.p, O.Excl{Nil{}, Nil{}}, x <> rest) == x <> _ : List<&2, U32>}
+      {==}
+
+law tiled_all:
+  for +st: Maybe<&2, W.Stack<U32>>
+  {O.tiled.stack(O.Excl{Nil{}, Nil{}}, st) == st : Maybe<&2, W.Stack<U32>>}
+
+def tiled_all(st):
+  match st:
+    case None{}:
+      {==}
+    case Some{s}:
+      match s:
+        case W.Stack{+f, +ls, +rs}:
+          %Equal.sym(List<&2, U32>, W.List.keep(~U32, ~O.Excl, ~O.tiled.p, O.Excl{Nil{}, Nil{}}, f <> rs), f <> rs, keep_all(f <> rs)) : {W.Stack.filter.down(U32, _, W.List.keep(~U32, ~O.Excl, ~O.tiled.p, O.Excl{Nil{}, Nil{}}, ls)) == Some{W.Stack{f, ls, rs}} : Maybe<&2, W.Stack<U32>>}
+          %Equal.sym(List<&2, U32>, W.List.keep(~U32, ~O.Excl, ~O.tiled.p, O.Excl{Nil{}, Nil{}}, ls), ls, keep_all(ls)) : {W.Stack.filter.down(U32, f <> rs, _) == Some{W.Stack{f, ls, rs}} : Maybe<&2, W.Stack<U32>>}
+          {==}
+
+def Proposed.one_screen_tiles(t, l, sid, r, st):
+  %Equal.sym(List<&2, L.Place<U32>>, O.flt.places(r, Nil{}, Nil{}, W.Stack.integrate.maybe(U32, st)), Nil{}, flt_none(r, Nil{}, W.Stack.integrate.maybe(U32, st))) : {[List.append(&2, L.Place<U32>, _, L.Layout.run(U32, l, r, O.tiled.stack(O.Excl{Nil{}, Nil{}}, st)))] == [L.Layout.run(U32, l, r, st)] : List<&2, List<&2, L.Place<U32>>>}
+  %Equal.sym(Maybe<&2, W.Stack<U32>>, O.tiled.stack(O.Excl{Nil{}, Nil{}}, st), st, tiled_all(st)) : {[L.Layout.run(U32, l, r, _)] == [L.Layout.run(U32, l, r, st)] : List<&2, List<&2, L.Place<U32>>>}
+  {==}
+
+def Proposed.key_focusDown():
+  {==}
+
+def Proposed.key_kill():
+  {==}
+
+def Proposed.key_nextLayout():
+  {==}
+
+def Proposed.key_quit():
+  {==}
+
+def Proposed.key_view3():
+  {==}
+
+def Proposed.key_shift9():
+  {==}
+
+def Proposed.cleanMask_locks():
+  {==}
+
+def Proposed.scan_override(w, m, s, rest):
+  {==}
+
+def Proposed.scan_viewable(w, s, rest):
+  {==}
+
+def Proposed.scan_iconic(w, rest):
+  {==}
+
+def Proposed.scan_withdrawn(w, rest):
+  {==}
+
+def Proposed.focusX_plain(s, pr, del, tf, w, t):
+  {==}
+
+def Proposed.focusX_noinput(s, pr, del, tf, w, t):
+  {==}
+
+def Proposed.focusX_takeFocus(s, pr, del, tf, w, t):
+  %Equal.sym(Bool, U32.is_eq(tf, tf), True{}, u32_eq_refl(tf)) : {O.cmds.append([C.SetFocus{w}], Bool.pick(List<&2, C.Cmd>, Bool.or(_, False{}), [C.SendMessage{w, pr, tf, t}], Nil{})) == [C.SetFocus{w}, C.SendMessage{w, pr, tf, t}] : List<&2, C.Cmd>}
+  {==}
+
+def Proposed.kill_delete(s, pr, del, tf, w):
+  %Equal.sym(Bool, U32.is_eq(del, del), True{}, u32_eq_refl(del)) : {Bool.pick(List<&2, C.Cmd>, Bool.or(_, False{}), [C.SendMessage{w, pr, del, 0}], [C.KillClient{w}]) == [C.SendMessage{w, pr, del, 0}] : List<&2, C.Cmd>}
+  {==}
+
+def Proposed.kill_client(s, pr, del, tf, w):
+  {==}
+
+def Proposed.not_fixed_without_hints():
+  {==}
+
+def Proposed.fixed_min_max(w, h):
+  %Equal.sym(Bool, U32.is_eq(w, w), True{}, u32_eq_refl(w)) : {Bool.and(_, U32.is_eq(h, h)) == True{} : Bool}
+  %Equal.sym(Bool, U32.is_eq(h, h), True{}, u32_eq_refl(h)) : {Bool.and(True{}, _) == True{} : Bool}
+  {==}
+
+def Proposed.contents_no_hints(w, h):
+  {==}
+
+def Proposed.pending_once(w):
+  %Equal.sym(Bool, U32.is_eq(w, w), True{}, u32_eq_refl(w)) : {Bool.pick(Nat, _, 1n, 0n) == 1n : Nat}
   {==}
