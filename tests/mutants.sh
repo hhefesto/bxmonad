@@ -1,5 +1,5 @@
 #!/usr/bin/env zsh
-# Breaks StackSet.bend and Layout.bend in small ways, one at a time, in a
+# Breaks StackSet.bend, Layout.bend and Operations.bend in small ways, one at a time, in a
 # scratch copy, and checks that PROOF.bend then fails (each mutant should
 # be "killed").  Needs bend in PATH ($BEND to override) and, for
 # --verdict, Lean 4.34.0.
@@ -62,6 +62,20 @@ mutant full Layout.bend 's/      \[Place\{W\.Stack\.focus\(A, s\), r\}\]/      N
 mutant zip Layout.bend 's/    case x <> xt r <> rt:/    case x <> xt r <> Nil{}:\n      Nil{}\n    case x <> xt r <> rt:/'
 # NextLayout from the left side goes straight to Full
 mutant next Layout.bend 's/Choose\.choose\(CL\{\}, CL\{\}, a, b, Some\{x\}, None\{\}, hide\)/Choose.choose(CL{}, CR{}, a, b, None{}, None{}, hide)/'
+
+# Operations.bend
+# a move drag swaps the pointer's x and y offsets
+mutant dragxy Operations.bend 's/U32\.sub\(x, ox\)\), U32\.add\(wy, U32\.sub\(y, oy\)\)/U32.sub(x, oy)), U32.add(wy, U32.sub(y, ox))/'
+# a resize drag's size below 1 (the pointer left of the corner) is kept
+mutant atleast1 Operations.bend 's/Bool\.or\(U32\.is_zero\(v\), U32\.is_gt\(v, 2147483647\)\)/U32.is_zero(v)/'
+# a release ends the drag without floating the window
+mutant relfloat Operations.bend 's/\[C\.UngrabPointer\{\}, C\.FloatWin\{drag\.win\(d\)\}\]/[C.UngrabPointer{}]/'
+# containedIn compares positions unsigned
+mutant signed Operations.bend 's/U32\.is_ge\(U32\.xor\(a, 2147483648\), U32\.xor\(b, 2147483648\)\)/U32.is_ge(a, b)/'
+# grabButtons grabs only mod-button2, as before the drags
+mutant grabs Operations.bend 's/grabButtons\.go\(root, C\.buttons\(\), /grabButtons.go(root, [C.MBinding{8, 2, C.MMaster{}}], /'
+# the XMONAD_RESTART message is ignored, as before restart was ported
+mutant restart Operations.bend 's/U32\.is_eq\(t, conf\.restart\(c\)\), C\.Step\{st, \[C\.Restart\{\}\]\}/U32.is_eq(t, conf.restart(c)), nop(st)/'
 
 print "$killed of $total killed"
 (( killed == total ))

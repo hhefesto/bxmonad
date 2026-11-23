@@ -60,6 +60,10 @@ def normal_hints(win: U32) -> IO(List<&2, U32>):
 def transient_for(win: U32) -> IO(List<&2, U32>):
   import "./x11.c"
 
+# WM_CLASS's class, a word per byte ([] if none)
+def class_hint(win: U32) -> IO(List<&2, U32>):
+  import "./x11.c"
+
 # [flags, input]
 def wm_hints(win: U32) -> IO(List<&2, U32>):
   import "./x11.c"
@@ -69,6 +73,11 @@ def protocols(win: U32) -> IO(List<&2, U32>):
 
 # [root x, root y, child]
 def pointer() -> IO(List<&2, U32>):
+  import "./x11.c"
+
+# Xinerama's screens, [x, y, width, height] each, or [] (none: no
+# Xinerama)
+def xinerama() -> IO(List<&2, U32>):
   import "./x11.c"
 
 def select_input(win: U32, mask: U32) -> IO(U32):
@@ -87,6 +96,24 @@ def stack_below(win: U32, sibling: U32) -> IO(U32):
   import "./x11.c"
 
 def move_resize(win: U32, x: U32, y: U32, w: U32, h: U32) -> IO(U32):
+  import "./x11.c"
+
+def move(win: U32, x: U32, y: U32) -> IO(U32):
+  import "./x11.c"
+
+def resize(win: U32, w: U32, h: U32) -> IO(U32):
+  import "./x11.c"
+
+# the pointer to x, y in win
+def warp(win: U32, x: U32, y: U32) -> IO(U32):
+  import "./x11.c"
+
+# grab the pointer to the root for mask's events, showing the cursor
+# font's glyph; and let it go
+def grab_pointer(mask: U32, glyph: U32) -> IO(U32):
+  import "./x11.c"
+
+def ungrab_pointer() -> IO(U32):
   import "./x11.c"
 
 def border_width(win: U32, w: U32) -> IO(U32):
@@ -120,4 +147,22 @@ def sync() -> IO(U32):
   import "./x11.c"
 
 def drop_events(mask: U32) -> IO(U32):
+  import "./x11.c"
+
+# The rest is not X: the few system calls xmonad's restart and its state
+# file need besides Bend's own (IO.get_env, File).
+
+# mkdir(path) with mode 0777, less the umask: 0, or errno (EEXIST if it is
+# there already)
+def mkdir(path: String) -> IO(U32):
+  import "./x11.c"
+
+# unlink(path): 0, or errno
+def unlink(path: String) -> IO(U32):
+  import "./x11.c"
+
+# the display flushed, then program run in this process's place with no
+# arguments, found by PATH as execvp finds it (executeFile prog True []):
+# it answers only when that fails (errno)
+def exec(program: String) -> IO(U32):
   import "./x11.c"

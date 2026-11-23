@@ -37,9 +37,10 @@
       };
       bendFor = pkgs: bend-frp.packages.${pkgs.stdenv.hostPlatform.system}.bend;
       # x11.c's headers and library, for the C compiler bend runs (its
-      # wrapper reads the flags under the platform's suffix)
+      # wrapper reads the flags under the platform's suffix), and where
+      # x11.c opens libXinerama
       x11Flags = pkgs: ''
-        export NIX_CFLAGS_COMPILE_${pkgs.stdenv.cc.suffixSalt}="-I${pkgs.libx11.dev}/include -I${pkgs.xorgproto}/include"
+        export NIX_CFLAGS_COMPILE_${pkgs.stdenv.cc.suffixSalt}="-I${pkgs.libx11.dev}/include -I${pkgs.xorgproto}/include -DX_XINERAMA=\"${pkgs.libxinerama}/lib/libXinerama.so.1\""
         export NIX_LDFLAGS_${pkgs.stdenv.cc.suffixSalt}="-L${pkgs.libx11}/lib -rpath ${pkgs.libx11}/lib"
       '';
       # GHC with what xmonad needs, and QuickCheck for the generators
@@ -72,6 +73,7 @@
           ghc -O1 -i${xmonad}/src -it/e2e/ref -outputdir o/ref -o $out/bin/xmonad-ref t/e2e/Ref.hs
           ghc -O0 -outputdir o/client -o $out/bin/e2e-client t/e2e/Client.hs
           ghc -O0 -outputdir o/snap -o $out/bin/e2e-snap t/e2e/Snap.hs
+          ghc -O0 -outputdir o/restart -o $out/bin/e2e-restart t/e2e/Restart.hs
         '';
       inSource =
         pkgs: name: inputs: script:
@@ -108,7 +110,7 @@
           # every pure module checks (Main and X use X11's effects, so a check
           # names them; it must name nothing else)
           modules = inSource pkgs "modules" [ ] ''
-            for f in Num StackSet Layout Core Operations; do
+            for f in Num StackSet Layout Core Operations StateFile; do
               bend $f.bend --check-only 2>&1 | tee -a $out | grep -q 'ALL PROOFS CHECK'
             done
           '';

@@ -30,33 +30,48 @@ import ./Core.bend as C
 
 def st.ws(s: C.XState) -> C.WindowSet():
   match s:
-    case C.XState{w, _, _, _}:
+    case C.XState{w, _, _, _, _}:
       w
 
 def st.numlock(s: C.XState) -> U32:
   match s:
-    case C.XState{_, _, _, n}:
+    case C.XState{_, _, _, n, _}:
       n
+
+def st.drag(s: C.XState) -> Maybe<&2, C.Drag>:
+  match s:
+    case C.XState{_, _, _, _, d}:
+      d
 
 def st.setWs(s: C.XState, w: C.WindowSet()) -> C.XState:
   match s:
-    case C.XState{_, m, p, n}:
-      C.XState{w, m, p, n}
+    case C.XState{_, m, p, n, d}:
+      C.XState{w, m, p, n, d}
+
+def st.setDrag(s: C.XState, d: Maybe<&2, C.Drag>) -> C.XState:
+  match s:
+    case C.XState{w, m, p, n, _}:
+      C.XState{w, m, p, n, d}
 
 def conf.root(c: C.Conf) -> U32:
   match c:
-    case C.Conf{r, _, _}:
+    case C.Conf{r, _, _, _}:
       r
 
 def conf.nbc(c: C.Conf) -> U32:
   match c:
-    case C.Conf{_, n, _}:
+    case C.Conf{_, n, _, _}:
       n
 
 def conf.fbc(c: C.Conf) -> U32:
   match c:
-    case C.Conf{_, _, f}:
+    case C.Conf{_, _, f, _}:
       f
+
+def conf.restart(c: C.Conf) -> U32:
+  match c:
+    case C.Conf{_, _, _, a}:
+      a
 
 def nop(s: C.XState) -> C.Step:
   C.Step{s, Nil{}}
@@ -351,7 +366,7 @@ def topFocus(m: Maybe<&2, U32>, +root: U32) -> U32:
 # mouse (then the EnterNotifys it causes are kept)
 def windows(+c: C.Conf, st: C.XState, +new: C.WindowSet(), mouse: Bool) -> C.Step:
   match st:
-    case C.XState{+old, mapped, waiting, nl}:
+    case C.XState{+old, mapped, waiting, nl, dr}:
       +oldvisible = scr.wins(C.ws.screens(old))
       +newwindows = C.win.diff(C.ws.allWindows(new), C.ws.allWindows(old))
       +perScreen = place.screens(C.ws.floating(new), C.ws.screens(new), Nil{})
@@ -367,7 +382,7 @@ def windows(+c: C.Conf, st: C.XState, +new: C.WindowSet(), mouse: Bool) -> C.Ste
       +cs4 = setFocusX(conf.root(c), new, topFocus(C.ws.peek(new), conf.root(c)))
       +cs5 = cmds.append(hide.cmds(hits), withdraw.cmds(C.win.diff(C.ws.allWindows(old), C.ws.allWindows(new))))
       +cs6 = Bool.pick(List<&2, C.Cmd>, mouse, Nil{}, [C.DropEvents{C.ev.enterWindow()}])
-      C.Step{C.XState{s2, C.win.diff(m1, hits), pending.incAll(hits, waiting), nl}, cmds.append(cs1, cmds.append(cs2, cmds.append(cs3, cmds.append(cs4, cmds.append(cs5, cs6)))))}
+      C.Step{C.XState{s2, C.win.diff(m1, hits), pending.incAll(hits, waiting), nl, dr}, cmds.append(cs1, cmds.append(cs2, cmds.append(cs3, cmds.append(cs4, cmds.append(cs5, cs6)))))}
 
 def windowsKey(+c: C.Conf, +st: C.XState, f: C.WindowSet() -> C.WindowSet()) -> C.Step:
   windows(c, st, f(st.ws(st)), False{})
@@ -544,13 +559,20 @@ def adjust(r: W.RationalRect) -> W.RationalRect:
       +zero = L.Rat.zero()
       Bool.pick(W.RationalRect, Bool.or(Bool.or(Cmp.is_gt(N.Rat.cmp(N.Rat.add(x, w), one)), Cmp.is_gt(N.Rat.cmp(N.Rat.add(y, h), one))), Bool.or(Cmp.is_lt(N.Rat.cmp(x, zero)), Cmp.is_lt(N.Rat.cmp(y, zero)))), W.RationalRect{rat.centered(w), rat.centered(h), w, h}, W.RationalRect{x, y, w, h})
 
+# the manageHook's doFloat: a window whose class is one of
+# cfg.floatClasses floats, at floatLocation's place (unadjusted)
+def manageHook.floats(+cls: String) -> Bool:
+  tag.elem(cls, C.cfg.floatClasses())
+
 # manage w: a new window into the current workspace, on top, focused;
-# floating if its size is fixed or it is transient for another
-def manage(+c: C.Conf, +st: C.XState, +w: U32, am: Maybe<&2, C.Attrs>, +h: C.Hints, transient: Bool) -> C.Step:
+# floating if its size is fixed or it is transient for another (then a
+# place off the screen is centred); then the manageHook, by its class
+def manage(+c: C.Conf, +st: C.XState, +w: U32, am: Maybe<&2, C.Attrs>, +h: C.Hints, transient: Bool, +cls: String) -> C.Step:
   +s = st.ws(st)
   +float = Bool.or(hints.fixed(h), transient)
   +rr = loc.rr(floatLocation(s, am, h, False{}))
-  windows(c, st, Bool.pick(C.WindowSet(), float, C.ws.float(w, adjust(rr), C.ws.insertUp(w, C.ws.view(C.ws.currentTag(s), s))), C.ws.insertUp(w, s)), False{})
+  +f = Bool.pick(C.WindowSet(), float, C.ws.float(w, adjust(rr), C.ws.insertUp(w, C.ws.view(C.ws.currentTag(s), s))), C.ws.insertUp(w, s))
+  windows(c, st, Bool.pick(C.WindowSet(), manageHook.floats(cls), C.ws.float(w, rr, f), f), False{})
 
 def unmanage(+c: C.Conf, +st: C.XState, +w: U32) -> C.Step:
   windows(c, st, C.ws.delete(w, st.ws(st)), False{})
@@ -657,15 +679,24 @@ def grabKeys.go(gs: List<&2, C.Grab>) -> List<&2, C.Cmd>:
 def grabKeys(+nl: U32) -> List<&2, C.Cmd>:
   C.UngrabKeys{} <> grabKeys.go(C.keys.grabs(C.keys(), C.extraModifiers(nl)))
 
-def grabButtons.go(+root: U32, es: List<&2, U32>) -> List<&2, C.Cmd>:
+def grabButtons.one(+root: U32, +m: U32, +b: U32, es: List<&2, U32>) -> List<&2, C.Cmd>:
   match es:
     case Nil{}:
       Nil{}
     case e <> rest:
-      C.GrabButton{root, 2, U32.or(C.cfg.modMask(), e), 0, C.grab.async(), C.grab.sync()} <> grabButtons.go(root, rest)
+      C.GrabButton{root, b, U32.or(m, e), 0, C.grab.async(), C.grab.sync()} <> grabButtons.one(root, m, b, rest)
 
+def grabButtons.go(+root: U32, bs: List<&2, C.MBinding>, +es: List<&2, U32>) -> List<&2, C.Cmd>:
+  match bs:
+    case Nil{}:
+      Nil{}
+    case C.MBinding{m, b, _} <> rest:
+      cmds.append(grabButtons.one(root, m, b, es), grabButtons.go(root, rest, es))
+
+# grabButtons: each mouse binding's button with its mask and each extra
+# modifier, on the root
 def grabButtons(+root: U32, +nl: U32) -> List<&2, C.Cmd>:
-  C.UngrabButtons{root} <> grabButtons.go(root, C.extraModifiers(nl))
+  C.UngrabButtons{root} <> grabButtons.go(root, C.buttons(), C.extraModifiers(nl))
 
 # Keys and messages ------------------------------------------------------------------
 
@@ -751,37 +782,158 @@ def act.maybe(+c: C.Conf, +st: C.XState, m: Maybe<&2, C.Act>) -> C.Step:
     case Some{a}:
       act(c, st, a)
 
-# the mouse binding mod-button2 on the root: focus the window under the
-# pointer and make it the master
-def button.act(+c: C.Conf, +st: C.XState, +sub: U32) -> C.Step:
-  windows(c, st, W.shiftMaster(String, L.Layout, U32, Nat, L.Rectangle, C.ws.focusWindow(sub, st.ws(st))), False{})
+# the step's requests, then xs
+def step.then(s: C.Step, xs: List<&2, C.Cmd>) -> C.Step:
+  match s:
+    case C.Step{x, cs}:
+      C.Step{x, List.append(&2, C.Cmd, cs, xs)}
 
+# a mouse binding on the root, on the window under the pointer (sub; the
+# pointer at x, y): mod-button1 focus w >> mouseMoveWindow w >> windows
+# shiftMaster (the last two are MouseMove, as they need X's answers),
+# mod-button2 windows (shiftMaster . focusWindow w), mod-button3 focus w
+# >> mouseResizeWindow w >> windows shiftMaster
+def button.act(+c: C.Conf, +st: C.XState, a: C.MAct, +sub: U32, +x: U32, +y: U32) -> C.Step:
+  match a:
+    case C.MMove{}:
+      step.then(focus(c, st, sub, Some{Pos{x, y}}), [C.MouseMove{sub}])
+    case C.MMaster{}:
+      windows(c, st, W.shiftMaster(String, L.Layout, U32, Nat, L.Rectangle, C.ws.focusWindow(sub, st.ws(st))), False{})
+    case C.MResize{}:
+      step.then(focus(c, st, sub, Some{Pos{x, y}}), [C.MouseResize{sub}])
+
+def button.on(+c: C.Conf, +st: C.XState, +w: U32, m: Maybe<&2, C.MAct>, +sub: U32, +x: U32, +y: U32) -> C.Step:
+  match m:
+    case Some{a}:
+      button.act(c, st, a, sub, x, y)
+    case None{}:
+      focus(c, st, w, Some{Pos{x, y}})
+
+# a button pressed: on the root (one of grabButtons' grabs), its mouse
+# binding, if it has one; else click to focus
 def button(+c: C.Conf, +st: C.XState, +w: U32, b: U32, m: U32, +sub: U32, +x: U32, +y: U32) -> C.Step:
-  W.Bool.if(C.Step, Bool.and(U32.is_eq(w, conf.root(c)), Bool.and(U32.is_eq(C.cleanMask(st.numlock(st), m), C.cfg.modMask()), U32.is_eq(b, 2))), _ => button.act(c, st, sub), _ => focus(c, st, w, Some{Pos{x, y}}))
+  W.Bool.if(C.Step, U32.is_eq(w, conf.root(c)), _ => button.on(c, st, w, C.buttons.find(C.cleanMask(st.numlock(st), m), b, C.buttons()), sub, x, y), _ => focus(c, st, w, Some{Pos{x, y}}))
+
+# Drags ----------------------------------------------------------------------------
+
+def shiftMaster(+c: C.Conf, +st: C.XState) -> C.Step:
+  windows(c, st, W.shiftMaster(String, L.Layout, U32, Nat, L.Rectangle, st.ws(st)), False{})
+
+# the step, then windows shiftMaster
+def step.shiftMaster(+c: C.Conf, s: C.Step) -> C.Step:
+  match s:
+    case C.Step{x, cs}:
+      step.after(cs, shiftMaster(c, x))
+
+def drag.start.go(+st: C.XState, m: Maybe<&2, C.Drag>, +glyph: U32, d: C.Drag) -> C.Step:
+  match m:
+    case Some{_}:
+      nop(st)
+    case None{}:
+      C.Step{st.setDrag(st, Some{d}), [C.GrabPointer{glyph}]}
+
+# mouseDragCursor's start: unless a drag holds the pointer already, grab it
+# (showing glyph) and hold d
+def drag.start(+st: C.XState, +glyph: U32, d: C.Drag) -> C.Step:
+  drag.start.go(st, st.drag(st), glyph, d)
+
+# mouseMoveWindow w (the window's attributes and the pointer's place on the
+# root, as X answers them now), then windows shiftMaster: if w is a client,
+# a drag moving it from where it is
+def mouseMove(+c: C.Conf, +st: C.XState, +w: U32, am: Maybe<&2, C.Attrs>, +px: U32, +py: U32) -> C.Step:
+  match am:
+    case None{}:
+      shiftMaster(c, st)
+    case Some{C.Attrs{ax, ay, _, _, _, _}}:
+      W.Bool.if(C.Step, C.ws.member(w, st.ws(st)), _ => step.shiftMaster(c, drag.start(st, C.cursor.fleur(), C.DragMove{w, ax, ay, px, py})), _ => shiftMaster(c, st))
+
+# mouseResizeWindow w (its attributes and WM_NORMAL_HINTS), then windows
+# shiftMaster: if w is a client, the pointer to its bottom right corner
+# and a drag resizing it
+def mouseResize(+c: C.Conf, +st: C.XState, +w: U32, am: Maybe<&2, C.Attrs>, h: C.Hints) -> C.Step:
+  match am:
+    case None{}:
+      shiftMaster(c, st)
+    case Some{C.Attrs{ax, ay, aw, ah, _, _}}:
+      W.Bool.if(C.Step, C.ws.member(w, st.ws(st)), _ => step.after([C.WarpPointer{w, aw, ah}], step.shiftMaster(c, drag.start(st, C.cursor.bottomRightCorner(), C.DragResize{w, ax, ay, h}))), _ => shiftMaster(c, st))
+
+# max 1 v, for v an Int32
+def i32.atLeast1(+v: U32) -> U32:
+  Bool.pick(U32, Bool.or(U32.is_zero(v), U32.is_gt(v, 2147483647)), 1, v)
+
+# applySizeHintsContents at Positions (a drag's size can be below 1)
+def hints.contents.pos(h: C.Hints, +w: U32, +ht: U32) -> Dim:
+  hints.apply(h, Dim{i32.atLeast1(w), i32.atLeast1(ht)})
+
+def drag.resize(+w: U32, d: Dim) -> List<&2, C.Cmd>:
+  match d:
+    case Dim{dw, dh}:
+      [C.ResizeWin{w, dw, dh}, C.FloatWin{w}, C.DropEvents{C.ev.pointerMotion()}]
+
+# the pointer at x, y during drag d: move the window by as much as the
+# pointer moved (or size it to reach the pointer), float it, then drop the
+# motion events queued meanwhile
+def drag.motion(d: C.Drag, +x: U32, +y: U32) -> List<&2, C.Cmd>:
+  match d:
+    case C.DragMove{+w, wx, wy, ox, oy}:
+      [C.MoveWin{w, U32.add(wx, U32.sub(x, ox)), U32.add(wy, U32.sub(y, oy))}, C.FloatWin{w}, C.DropEvents{C.ev.pointerMotion()}]
+    case C.DragResize{+w, wx, wy, h}:
+      drag.resize(w, hints.contents.pos(h, U32.sub(x, wx), U32.sub(y, wy)))
+
+def motion.go(+st: C.XState, m: Maybe<&2, C.Drag>, +x: U32, +y: U32) -> C.Step:
+  match m:
+    case None{}:
+      nop(st)
+    case Some{d}:
+      C.Step{st, drag.motion(d, x, y)}
+
+# MotionNotify: the drag's step, if one holds the pointer (else
+# broadcastMessage, which no default layout answers)
+def motion(+st: C.XState, +x: U32, +y: U32) -> C.Step:
+  motion.go(st, st.drag(st), x, y)
+
+def drag.win(d: C.Drag) -> U32:
+  match d:
+    case C.DragMove{w, _, _, _, _}:
+      w
+    case C.DragResize{w, _, _, _}:
+      w
+
+def release.go(+st: C.XState, m: Maybe<&2, C.Drag>) -> C.Step:
+  match m:
+    case None{}:
+      nop(st)
+    case Some{d}:
+      C.Step{st.setDrag(st, None{}), [C.UngrabPointer{}, C.FloatWin{drag.win(d)}]}
+
+# ButtonRelease: the end of the drag holding the pointer, if any: the
+# pointer ungrabbed and the window floated where it is
+def release(+st: C.XState) -> C.Step:
+  release.go(st, st.drag(st))
 
 # Events -------------------------------------------------------------------------
 
 def unmap.go(+c: C.Conf, +st: C.XState, +w: U32, syn: Bool) -> C.Step:
   match st:
-    case C.XState{+s, +m, +p, +n}:
-      W.Bool.if(C.Step, Bool.or(syn, Nat.is_eq(pending.get(w, p), 0n)), _ => unmanage(c, st, w), _ => nop(C.XState{s, m, pending.dec(w, p), n}))
+    case C.XState{+s, +m, +p, +n, +d}:
+      W.Bool.if(C.Step, Bool.or(syn, Nat.is_eq(pending.get(w, p), 0n)), _ => unmanage(c, st, w), _ => nop(C.XState{s, m, pending.dec(w, p), n, d}))
 
 def destroy.go(+c: C.Conf, +w: U32, s: C.Step) -> C.Step:
   match s:
-    case C.Step{C.XState{ws, m, p, n}, cs}:
-      C.Step{C.XState{ws, C.win.delete(w, m), pending.del(w, p), n}, cs}
+    case C.Step{C.XState{ws, m, p, n, d}, cs}:
+      C.Step{C.XState{ws, C.win.delete(w, m), pending.del(w, p), n, d}, cs}
 
 def attrs.ovr(a: C.Attrs) -> Bool:
   match a:
     case C.Attrs{_, _, _, _, _, o}:
       o
 
-def mapRequest(+c: C.Conf, +st: C.XState, +w: U32, am: Maybe<&2, C.Attrs>, +h: C.Hints, tr: Bool) -> C.Step:
+def mapRequest(+c: C.Conf, +st: C.XState, +w: U32, am: Maybe<&2, C.Attrs>, +h: C.Hints, tr: Bool, +cls: String) -> C.Step:
   match am:
     case None{}:
       nop(st)
     case Some{+a}:
-      W.Bool.if(C.Step, Bool.or(attrs.ovr(a), C.ws.member(w, st.ws(st))), _ => nop(st), _ => manage(c, st, w, Some{a}, h, tr))
+      W.Bool.if(C.Step, Bool.or(attrs.ovr(a), C.ws.member(w, st.ws(st))), _ => nop(st), _ => manage(c, st, w, Some{a}, h, tr, cls))
 
 def configure.notify(+w: U32, +bw: U32, am: Maybe<&2, C.Attrs>) -> List<&2, C.Cmd>:
   match am:
@@ -806,8 +958,8 @@ def handle(+c: C.Conf, +st: C.XState, e: C.Ev) -> C.Step:
   match e:
     case C.EvKey{m, sym}:
       act.maybe(c, st, C.keys.find(C.cleanMask(st.numlock(st), m), sym, C.keys()))
-    case C.EvMapRequest{w, am, h, tr}:
-      mapRequest(c, st, w, am, h, tr)
+    case C.EvMapRequest{w, am, h, tr, cls}:
+      mapRequest(c, st, w, am, h, tr, cls)
     case C.EvDestroy{+w}:
       W.Bool.if(C.Step, C.ws.member(w, st.ws(st)), _ => destroy.go(c, w, unmanage(c, st, w)), _ => nop(st))
     case C.EvUnmap{+w, syn}:
@@ -824,6 +976,12 @@ def handle(+c: C.Conf, +st: C.XState, e: C.Ev) -> C.Step:
       configureRequest(c, st, w, vm, x, y, wd, ht, bw, ab, dt, am)
     case C.EvConfigureNotify{w}:
       Bool.pick(C.Step, U32.is_eq(w, conf.root(c)), C.Step{st, [C.Rescreen{}]}, nop(st))
+    case C.EvRelease{}:
+      release(st)
+    case C.EvMotion{x, y}:
+      motion(st, x, y)
+    case C.EvClientMessage{+t}:
+      Bool.pick(C.Step, U32.is_eq(t, conf.restart(c)), C.Step{st, [C.Restart{}]}, nop(st))
     case C.EvOther{}:
       nop(st)
 
@@ -861,8 +1019,44 @@ def rescreen.ws(rs: List<&2, L.Rectangle>, s: C.WindowSet()) -> C.WindowSet():
     case Nil{} _:
       s
 
+# rescreen, from getCleanedScreenInfo's rectangles: none, nothing changes
+# (xmonad traces "getCleanedScreenInfo returned []")
 def rescreen(+c: C.Conf, +st: C.XState, rs: List<&2, L.Rectangle>) -> C.Step:
-  windows(c, st, rescreen.ws(rs, st.ws(st)), False{})
+  match rs:
+    case Nil{}:
+      nop(st)
+    case r <> rt:
+      windows(c, st, rescreen.ws(r <> rt, st.ws(st)), False{})
+
+# x >= y, for Int32s (the sign bit flipped, they compare as Word32s)
+def i32.ge(+a: U32, +b: U32) -> Bool:
+  U32.is_ge(U32.xor(a, 2147483648), U32.xor(b, 2147483648))
+
+# containedIn r1 r2: r1 is another rectangle, inside r2 (the far edges
+# compared as Dimensions, as xmonad's fromIntegral x1 + w1 does)
+def containedIn(r1: L.Rectangle, r2: L.Rectangle) -> Bool:
+  match r1 r2:
+    case L.Rectangle{+x1, +y1, +w1, +h1} L.Rectangle{+x2, +y2, +w2, +h2}:
+      +same = Bool.and(Bool.and(U32.is_eq(x1, x2), U32.is_eq(y1, y2)), Bool.and(U32.is_eq(w1, w2), U32.is_eq(h1, h2)))
+      Bool.and(Bool.not(same), Bool.and(Bool.and(i32.ge(x1, x2), i32.ge(y1, y2)), Bool.and(U32.is_le(U32.add(x1, w1), U32.add(x2, w2)), U32.is_le(U32.add(y1, h1), U32.add(y2, h2)))))
+
+def containedIn.any(+r: L.Rectangle, xs: List<&2, L.Rectangle>) -> Bool:
+  match xs:
+    case Nil{}:
+      False{}
+    case x <> rest:
+      Bool.or(containedIn(r, x), containedIn.any(r, rest))
+
+def nubScreens.keep(xs: List<&2, L.Rectangle>, +all: List<&2, L.Rectangle>) -> List<&2, L.Rectangle>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case +x <> +rest:
+      W.Bool.if(List<&2, L.Rectangle>, containedIn.any(x, all), _ => nubScreens.keep(rest, all), _ => x <> nubScreens.keep(rest, all))
+
+# nubScreens: the screens not inside another, each once (getCleanedScreenInfo)
+def nubScreens(+xs: List<&2, L.Rectangle>) -> List<&2, L.Rectangle>:
+  W.List.nub(~L.Rectangle, ~rect.is_eq, nubScreens.keep(xs, xs))
 
 # Startup -----------------------------------------------------------------------
 
@@ -882,7 +1076,7 @@ def initialWinset(+rs: List<&2, L.Rectangle>) -> Maybe<&2, C.WindowSet()>:
   W.new(String, L.Layout, U32, L.Rectangle, C.cfg.layout(), pad.go(C.cfg.workspaces(), rs), rs)
 
 def initialState(s: C.WindowSet()) -> C.XState:
-  C.XState{s, Nil{}, Nil{}, 0}
+  C.XState{s, Nil{}, Nil{}, 0, None{}}
 
 # scan: the root's children xmonad takes at startup: not override-redirect,
 # and viewable (map_state 2) or iconic (WM_STATE 3)

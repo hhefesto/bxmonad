@@ -1,10 +1,11 @@
 -- A test client for the end-to-end comparison (tests/e2e.sh): one window,
 -- named by its first argument, mapped, and kept until it is told to go.
 --
---   client NAME [fixed W H] [transient PARENT]
+--   client NAME [fixed W H] [transient PARENT] [class CLASS]
 --
 -- fixed: WM_NORMAL_HINTS with min = max = W x H (xmonad floats it).
 -- transient: WM_TRANSIENT_FOR the window named PARENT (xmonad floats it).
+-- class: WM_CLASS NAME, CLASS (xmonad floats the classes MPlayer, mplayer2).
 -- It takes WM_DELETE_WINDOW (xmonad's kill closes it). SIGUSR1 unmaps the
 -- window (a client withdrawing it), SIGUSR2 destroys it and exits.
 module Main (main) where
@@ -19,15 +20,16 @@ import System.Environment (getArgs)
 import System.Exit (exitSuccess)
 import System.Posix.Signals
 
-data Opts = Opts { oName :: String, oFixed :: Maybe (Int, Int), oParent :: Maybe String }
+data Opts = Opts { oName :: String, oFixed :: Maybe (Int, Int), oParent :: Maybe String, oClass :: Maybe String }
 
 parse :: [String] -> Opts
-parse (n : rest) = go rest (Opts n Nothing Nothing)
+parse (n : rest) = go rest (Opts n Nothing Nothing Nothing)
   where
     go ("fixed" : w : h : xs) o = go xs o { oFixed = Just (read w, read h) }
     go ("transient" : p : xs) o = go xs o { oParent = Just p }
+    go ("class" : c : xs) o = go xs o { oClass = Just c }
     go _ o = o
-parse [] = error "client NAME [fixed W H] [transient PARENT]"
+parse [] = error "client NAME [fixed W H] [transient PARENT] [class CLASS]"
 
 byName :: Display -> String -> IO (Maybe Window)
 byName d n = do
@@ -44,6 +46,7 @@ main = do
   let s = defaultScreen d
   w <- createSimpleWindow d (defaultRootWindow d) 10 20 400 300 0 (blackPixel d s) (whitePixel d s)
   storeName d w (oName o)
+  maybe (return ()) (setClassHint d w . ClassHint (oName o)) (oClass o)
   del <- internAtom d "WM_DELETE_WINDOW" False
   setWMProtocols d w [del]
   case oFixed o of

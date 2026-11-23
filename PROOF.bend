@@ -1465,10 +1465,18 @@ def u32_eq_refl(w):
 def Proposed.handle_other(c, st):
   {==}
 
-def Proposed.windows_ws(c, old, m, p, n, new, mouse):
+def Proposed.handle_restart(root, nbc, fbc, a, st):
+  %Equal.sym(Bool, U32.is_eq(a, a), True{}, u32_eq_refl(a)) : {Bool.pick(C.Step, _, C.Step{st, [C.Restart{}]}, O.nop(st)) == C.Step{st, [C.Restart{}]} : C.Step}
   {==}
 
-def Proposed.windows_numlock(c, old, m, p, n, new, mouse):
+def Proposed.handle_message_other(root, nbc, fbc, a, t, st, h):
+  %Equal.sym(Bool, U32.is_eq(t, a), False{}, h) : {Bool.pick(C.Step, _, C.Step{st, [C.Restart{}]}, O.nop(st)) == O.nop(st) : C.Step}
+  {==}
+
+def Proposed.windows_ws(c, old, m, p, n, d, new, mouse):
+  {==}
+
+def Proposed.windows_numlock(c, old, m, p, n, d, new, mouse):
   {==}
 
 # no floating windows: none placed as floating
@@ -1581,4 +1589,67 @@ def Proposed.contents_no_hints(w, h):
 
 def Proposed.pending_once(w):
   %Equal.sym(Bool, U32.is_eq(w, w), True{}, u32_eq_refl(w)) : {Bool.pick(Nat, _, 1n, 0n) == 1n : Nat}
+  {==}
+
+# The mouse drags
+
+def Proposed.release_idle(c, s, m, p, n):
+  {==}
+
+def Proposed.motion_idle(c, s, m, p, n, x, y):
+  {==}
+
+def Proposed.release_ends(c, s, m, p, n, d):
+  {==}
+
+def Proposed.move_follows(c, s, m, p, n, w, wx, wy, ox, oy, x, y):
+  {==}
+
+def Proposed.resize_follows(c, s, m, p, n, w, wx, wy, x, y):
+  {==}
+
+def Proposed.resize_at_least_one():
+  {==}
+
+def Proposed.drag_once(s, m, p, n, d0, g, d):
+  {==}
+
+def Proposed.drag_start(s, m, p, n, g, d):
+  {==}
+
+def Proposed.grab_buttons(r):
+  {==}
+
+def Proposed.mod_button1(c, st, sub, x, y):
+  {==}
+
+# Screens
+
+def Proposed.nub_side_by_side():
+  {==}
+
+def Proposed.nub_inside():
+  {==}
+
+def Proposed.nub_twice():
+  {==}
+
+def Proposed.nub_left_of_origin():
+  {==}
+
+def Proposed.rescreen_none(c, st):
+  {==}
+
+# The manageHook
+
+def Proposed.hook_mplayer():
+  {==}
+
+def Proposed.hook_mplayer2():
+  {==}
+
+def Proposed.hook_other():
+  {==}
+
+def Proposed.hook_none():
   {==}

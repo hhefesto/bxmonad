@@ -21,10 +21,7 @@
 #   window, floating one) is one Cmd; Main.bend asks X and finishes it, by
 #   the same rules as xmonad (Operations.bend says which).
 # - The configuration is xmonad's default (XMonad.Config), fixed: there is no
-#   user config yet. Left out: the manageHook (its two rules float MPlayer
-#   by WM_CLASS), the restart key (mod-q), the help key (it runs xmessage),
-#   the mouse drags (mod-button1 moves a window, mod-button3 resizes it),
-#   Xinerama (one screen, the root's) and the state file.
+#   user config yet.
 
 import Base
 import ./StackSet.bend as W
@@ -52,11 +49,17 @@ def ev.keyPress() -> U32:
 def ev.buttonPress() -> U32:
   4
 
+def ev.buttonRelease() -> U32:
+  8
+
 def ev.enterWindow() -> U32:
   16
 
 def ev.leaveWindow() -> U32:
   32
+
+def ev.pointerMotion() -> U32:
+  64
 
 def ev.structureNotify() -> U32:
   131072
@@ -87,6 +90,13 @@ def grab.sync() -> U32:
 def grab.async() -> U32:
   1
 
+# the cursor font's glyphs the drags show (X11/cursorfont.h)
+def cursor.fleur() -> U32:
+  52
+
+def cursor.bottomRightCorner() -> U32:
+  14
+
 # keysyms xmonad's keys use
 def key.Return() -> U32:
   65293
@@ -105,6 +115,12 @@ def key.period() -> U32:
 
 def key.Num_Lock() -> U32:
   65407
+
+def key.slash() -> U32:
+  47
+
+def key.question() -> U32:
+  63
 
 # a lowercase letter's keysym is its ASCII code: 'a' is 97
 def key.letter(c: Char) -> U32:
@@ -144,13 +160,22 @@ type Ev is Data:
   EvLeave{win: U32, same: Bool}
   EvDestroy{win: U32}
   EvUnmap{win: U32, synthetic: Bool}
-  # a client asks to be shown: its attributes (None: it is gone), hints and
-  # whether it is transient for another
-  EvMapRequest{win: U32, attrs: Maybe<&2, Attrs>, hints: Hints, transient: Bool}
+  # a client asks to be shown: its attributes (None: it is gone), hints,
+  # whether it is transient for another, and its WM_CLASS's class ("" if
+  # it has none)
+  EvMapRequest{win: U32, attrs: Maybe<&2, Attrs>, hints: Hints, transient: Bool, cls: String}
   # a client asks to be moved or resized (its attributes: as for a map)
   EvConfigureRequest{win: U32, vmask: U32, x: U32, y: U32, w: U32, h: U32, bw: U32, above: U32, detail: U32, attrs: Maybe<&2, Attrs>}
   EvConfigureNotify{win: U32}
   EvMapping{request: U32}
+  # a button released (only while a drag holds the pointer does xmonad
+  # act on one)
+  EvRelease{}
+  # the pointer moved to the root's x, y (only while a drag holds it)
+  EvMotion{x: U32, y: U32}
+  # a ClientMessage, its message type (an atom): XMONAD_RESTART asks
+  # xmonad to restart (xmonad --restart sends it to the root)
+  EvClientMessage{kind: U32}
   EvOther{}
 
 # A request to X (or to Main.bend, for the ones that need X's answers)
@@ -197,17 +222,42 @@ type Cmd is Data:
   GrabRootButtons{}
   # manage at startup: a window scan found (Main.bend asks X about it)
   Manage{win: U32}
+  # moveWindow, resizeWindow, warpPointer (to x, y in win)
+  MoveWin{win: U32, x: U32, y: U32}
+  ResizeWin{win: U32, w: U32, h: U32}
+  WarpPointer{win: U32, x: U32, y: U32}
+  # mouseDrag's grab of the pointer (button releases and motion, to the
+  # root) showing the cursor font's glyph, and its end
+  GrabPointer{glyph: U32}
+  UngrabPointer{}
+  # mouseMoveWindow and mouseResizeWindow, then windows shiftMaster (the
+  # mod-button1 and mod-button3 bindings after their focus): they need
+  # the window's attributes and the pointer, or its WM_NORMAL_HINTS
+  MouseMove{win: U32}
+  MouseResize{win: U32}
+  # restart "xmonad" True: the windowset written to the state file, then
+  # the program run again in this one's place (Main.bend does both; if it
+  # cannot be run, this one goes on)
+  Restart{}
+
+# A drag the pointer is grabbed for (xmonad's dragging): moving win, from
+# its place wx, wy when the pointer was at ox, oy; or resizing it, its
+# corner at wx, wy, by its WM_NORMAL_HINTS
+type Drag is Data:
+  DragMove{win: U32, wx: U32, wy: U32, ox: U32, oy: U32}
+  DragResize{win: U32, wx: U32, wy: U32, hints: Hints}
 
 # windows hidden by xmonad, with the UnmapNotifys still to come for each
 type Pending is Data:
   Pending{win: U32, n: Nat}
 
 type XState is Data:
-  XState{ws: WindowSet(), mapped: List<&2, U32>, waiting: List<&2, Pending>, numlock: U32}
+  XState{ws: WindowSet(), mapped: List<&2, U32>, waiting: List<&2, Pending>, numlock: U32, drag: Maybe<&2, Drag>}
 
-# what xmonad asked X for at startup
+# what xmonad asked X for at startup: the root, the border colors' pixels
+# and the XMONAD_RESTART atom
 type Conf is Data:
-  Conf{root: U32, nbc: U32, fbc: U32}
+  Conf{root: U32, nbc: U32, fbc: U32, restart: U32}
 
 type Step is Data:
   Step{st: XState, cmds: List<&2, Cmd>}
@@ -238,6 +288,11 @@ def cfg.focusFollowsMouse() -> Bool:
 def cfg.clickJustFocuses() -> Bool:
   True{}
 
+# the manageHook: className =? "MPlayer" --> doFloat, className =? "mplayer2"
+# --> doFloat (composeAll: a window of one of these classes floats)
+def cfg.floatClasses() -> List<&2, String>:
+  ["MPlayer", "mplayer2"]
+
 def cfg.layout() -> L.Layout:
   L.Layout.default()
 
@@ -266,6 +321,87 @@ type Act is Data:
   AShift{tag: String}
   AScreenView{sc: Nat}
   AScreenShift{sc: Nat}
+
+# XMonad.Config's help: the default bindings, as mod-shift-/ shows them
+def help.lines() -> List<&2, String>:
+  ["The default modifier key is 'alt'. Default keybindings:",
+    "",
+    "-- launching and killing programs",
+    "mod-Shift-Enter  Launch xterminal",
+    "mod-p            Launch dmenu",
+    "mod-Shift-p      Launch gmrun",
+    "mod-Shift-c      Close/kill the focused window",
+    "mod-Space        Rotate through the available layout algorithms",
+    "mod-Shift-Space  Reset the layouts on the current workSpace to default",
+    "mod-n            Resize/refresh viewed windows to the correct size",
+    "mod-Shift-/      Show this help message with the default keybindings",
+    "",
+    "-- move focus up or down the window stack",
+    "mod-Tab        Move focus to the next window",
+    "mod-Shift-Tab  Move focus to the previous window",
+    "mod-j          Move focus to the next window",
+    "mod-k          Move focus to the previous window",
+    "mod-m          Move focus to the master window",
+    "",
+    "-- modifying the window order",
+    "mod-Return   Swap the focused window and the master window",
+    "mod-Shift-j  Swap the focused window with the next window",
+    "mod-Shift-k  Swap the focused window with the previous window",
+    "",
+    "-- resizing the master/slave ratio",
+    "mod-h  Shrink the master area",
+    "mod-l  Expand the master area",
+    "",
+    "-- floating layer support",
+    "mod-t  Push window back into tiling; unfloat and re-tile it",
+    "",
+    "-- increase or decrease number of windows in the master area",
+    "mod-comma  (mod-,)   Increment the number of windows in the master area",
+    "mod-period (mod-.)   Deincrement the number of windows in the master area",
+    "",
+    "-- quit, or restart",
+    "mod-Shift-q  Quit xmonad",
+    "mod-q        Restart xmonad",
+    "",
+    "-- Workspaces & screens",
+    "mod-[1..9]         Switch to workSpace N",
+    "mod-Shift-[1..9]   Move client to workspace N",
+    "mod-{w,e,r}        Switch to physical/Xinerama screens 1, 2, or 3",
+    "mod-Shift-{w,e,r}  Move client to screen 1, 2, or 3",
+    "",
+    "-- Mouse bindings: default actions bound to mouse events",
+    "mod-button1  Set the window to floating mode and move by dragging",
+    "mod-button2  Raise the window to the top of the stack",
+    "mod-button3  Set the window to floating mode and resize by dragging"]
+
+# unlines: each line and a newline
+def unlines(xs: List<&2, String>) -> String:
+  match xs:
+    case Nil{}:
+      ""
+    case x <> rest:
+      String.append(x, SCon{Char.from_u32(10), unlines(rest)})
+
+def sh.quote.go(s: String) -> String:
+  match s:
+    case SNil{}:
+      SCon{Char.from_u32(39), SNil{}}
+    case SCon{+c, +t}:
+      W.Bool.if(String, U32.is_eq(Char.to_u32(c), 39), _ => String.append("'\\''", sh.quote.go(t)), _ => SCon{c, sh.quote.go(t)})
+
+# a word for /bin/sh: s in single quotes (a quote in it as '\'')
+def sh.quote(s: String) -> String:
+  SCon{Char.from_u32(39), sh.quote.go(s)}
+
+# xmessage help, as a command for spawn's /bin/sh: XMONAD_XMESSAGE (if set)
+# or xmessage, with xmonad's arguments, run in the shell's place
+def help.cmd() -> String:
+  String.append("exec \"${XMONAD_XMESSAGE-xmessage}\" -default okay -xrm '*international:true' -xrm '*fontSet:-*-fixed-medium-r-normal-*-18-*-*-*-*-*-*-*,-*-fixed-*-*-*-*-18-*-*-*-*-*-*-*,-*-*-*-*-*-*-18-*-*-*-*-*-*-*' ", sh.quote(unlines(help.lines())))
+
+# mod-q: xmonad's restart command (with xmonad in PATH, it recompiles and
+# restarts it: xmonad --restart asks the running window manager to)
+def restart.cmd() -> String:
+  "if type xmonad; then xmonad --recompile && xmonad --restart; else xmessage xmonad not in \\$PATH: \"$PATH\"; fi"
 
 type Binding is Data:
   Binding{mask: U32, sym: U32, act: Act}
@@ -305,6 +441,9 @@ def keys() -> List<&2, Binding>:
     Binding{keys.mod(0), key.comma(), AMsg{L.IncMasterN{N.Int.of(1n)}}},
     Binding{keys.mod(0), key.period(), AMsg{L.IncMasterN{N.Int.Neg{0n}}}},
     Binding{keys.mod(s), key.letter('q'), AQuit{}},
+    Binding{keys.mod(0), key.letter('q'), ASpawn{restart.cmd()}},
+    Binding{keys.mod(s), key.slash(), ASpawn{help.cmd()}},
+    Binding{keys.mod(0), key.question(), ASpawn{help.cmd()}},
     Binding{keys.mod(0), key.letter('w'), AScreenView{0n}},
     Binding{keys.mod(s), key.letter('w'), AScreenShift{0n}},
     Binding{keys.mod(0), key.letter('e'), AScreenView{1n}},
@@ -319,6 +458,29 @@ def keys.find(+m: U32, +s: U32, ks: List<&2, Binding>) -> Maybe<&2, Act>:
       None{}
     case Binding{km, ksym, a} <> rest:
       W.Bool.if(Maybe<&2, Act>, Bool.and(U32.is_eq(km, m), U32.is_eq(ksym, s)), _ => Some{a}, _ => keys.find(m, s, rest))
+
+# What a mouse binding does to the window under the pointer
+type MAct is Data:
+  MMove{}
+  MMaster{}
+  MResize{}
+
+type MBinding is Data:
+  MBinding{mask: U32, button: U32, act: MAct}
+
+# XMonad.Config's mouseBindings, in Map order: mod-button1 floats the window
+# and moves it by dragging, mod-button2 raises it to the master,
+# mod-button3 floats it and resizes it by dragging
+def buttons() -> List<&2, MBinding>:
+  [MBinding{keys.mod(0), 1, MMove{}}, MBinding{keys.mod(0), 2, MMaster{}}, MBinding{keys.mod(0), 3, MResize{}}]
+
+# the action bound to (mask, button), if any
+def buttons.find(+m: U32, +b: U32, bs: List<&2, MBinding>) -> Maybe<&2, MAct>:
+  match bs:
+    case Nil{}:
+      None{}
+    case MBinding{bm, bb, a} <> rest:
+      W.Bool.if(Maybe<&2, MAct>, Bool.and(U32.is_eq(bm, m), U32.is_eq(bb, b)), _ => Some{a}, _ => buttons.find(m, b, rest))
 
 # the (mask, keysym) pairs to grab: each key with each extra modifier
 type Grab is Data:

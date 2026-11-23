@@ -23,6 +23,12 @@
 #include <X11/XKBlib.h>
 #include <X11/Xproto.h>
 #include <sys/wait.h>
+#include <dlfcn.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <signal.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 static Display* x_dpy;
 static Window   x_root;
@@ -423,6 +429,34 @@ static void __attribute__((constructor)) x_transient_for_use(void) {
 }
 #endif
 
+// X.class_hint(win): WM_CLASS's class (its second string), one word per
+// byte; [] when the window has no WM_CLASS (getClassHint: "")
+#ifdef CID(class_hint)
+Term x_class_hint_run(Env e, Term* f, IoWork* w) {
+  XClassHint ch = { NULL, NULL };
+  if (!XGetClassHint(x_dpy, (Window)(u32)f[0], &ch)) {
+    return x_words(e, NULL, 0);
+  }
+  u64 n = ch.res_class != NULL ? strlen(ch.res_class) : 0;
+  u32* r = malloc(sizeof(u32) * (n + 1));
+  for (u64 i = 0; i < n; i += 1) {
+    r[i] = (u32)(unsigned char)ch.res_class[i];
+  }
+  if (ch.res_name != NULL) {
+    XFree(ch.res_name);
+  }
+  if (ch.res_class != NULL) {
+    XFree(ch.res_class);
+  }
+  Term t = x_words(e, r, n);
+  free(r);
+  return t;
+}
+static void __attribute__((constructor)) x_class_hint_use(void) {
+  io_eff(CID(class_hint), x_class_hint_run);
+}
+#endif
+
 // X.wm_hints(win): [flags, input] of WM_HINTS, [0, 0] when it has none
 #ifdef CID(wm_hints)
 Term x_wm_hints_run(Env e, Term* f, IoWork* w) {
@@ -477,6 +511,53 @@ Term x_pointer_run(Env e, Term* f, IoWork* w) {
 }
 static void __attribute__((constructor)) x_pointer_use(void) {
   io_eff(CID(pointer), x_pointer_run);
+}
+#endif
+
+// X.xinerama: Xinerama's screens, four words each (x, y, width, height),
+// or [] when it answers none (XineramaQueryScreens gives NULL: no
+// extension, or not active). libXinerama is opened at the first use (at
+// X_XINERAMA, a path the build may give, else by its soname), so a build
+// needs only libX11; without the library there are no Xinerama screens,
+// as without the extension.
+#ifdef CID(xinerama)
+#ifndef X_XINERAMA
+#define X_XINERAMA "libXinerama.so.1"
+#endif
+typedef struct {
+  int   screen_number;
+  short x_org, y_org, width, height;
+} x_XineramaScreenInfo;
+Term x_xinerama_run(Env e, Term* f, IoWork* w) {
+  static int tried;
+  static x_XineramaScreenInfo* (*query)(Display*, int*);
+  if (!tried) {
+    tried = 1;
+    void* lib = dlopen(X_XINERAMA, RTLD_NOW | RTLD_LOCAL);
+    if (lib != NULL) {
+      query = (x_XineramaScreenInfo* (*)(Display*, int*))dlsym(lib,
+        "XineramaQueryScreens");
+    }
+  }
+  int n = 0;
+  x_XineramaScreenInfo* s = query != NULL ? query(x_dpy, &n) : NULL;
+  if (s == NULL) {
+    return x_words(e, NULL, 0);
+  }
+  u32* r = malloc(sizeof(u32) * 4 * (u64)(n > 0 ? n : 1));
+  for (int i = 0; i < n; i += 1) {
+    r[4 * i + 0] = (u32)(int)s[i].x_org;
+    r[4 * i + 1] = (u32)(int)s[i].y_org;
+    r[4 * i + 2] = (u32)(int)s[i].width;
+    r[4 * i + 3] = (u32)(int)s[i].height;
+  }
+  XFree(s);
+  Term t = x_words(e, r, 4 * (u64)n);
+  free(r);
+  return t;
+}
+static void __attribute__((constructor)) x_xinerama_use(void) {
+  io_eff(CID(xinerama), x_xinerama_run);
 }
 #endif
 
@@ -545,6 +626,65 @@ Term x_move_resize_run(Env e, Term* f, IoWork* w) {
 }
 static void __attribute__((constructor)) x_move_resize_use(void) {
   io_eff(CID(move_resize), x_move_resize_run);
+}
+#endif
+
+// X.move(win, x, y), X.resize(win, width, height)
+#ifdef CID(move)
+Term x_move_run(Env e, Term* f, IoWork* w) {
+  XMoveWindow(x_dpy, (Window)(u32)f[0], (int)(u32)f[1], (int)(u32)f[2]);
+  return x_ok(0);
+}
+static void __attribute__((constructor)) x_move_use(void) {
+  io_eff(CID(move), x_move_run);
+}
+#endif
+
+#ifdef CID(resize)
+Term x_resize_run(Env e, Term* f, IoWork* w) {
+  XResizeWindow(x_dpy, (Window)(u32)f[0], (u32)f[1], (u32)f[2]);
+  return x_ok(0);
+}
+static void __attribute__((constructor)) x_resize_use(void) {
+  io_eff(CID(resize), x_resize_run);
+}
+#endif
+
+// X.warp(win, x, y): the pointer to x, y in win (warpPointer d none w 0 0 0
+// 0 x y)
+#ifdef CID(warp)
+Term x_warp_run(Env e, Term* f, IoWork* w) {
+  XWarpPointer(x_dpy, None, (Window)(u32)f[0], 0, 0, 0, 0, (int)(u32)f[1],
+    (int)(u32)f[2]);
+  return x_ok(0);
+}
+static void __attribute__((constructor)) x_warp_use(void) {
+  io_eff(CID(warp), x_warp_run);
+}
+#endif
+
+// X.grab_pointer(mask, glyph): mouseDragCursor's grab: the pointer to the
+// root, not owner_events, for mask's events, both modes async, no
+// confine, the cursor font's glyph as the cursor
+#ifdef CID(grab_pointer)
+Term x_grab_pointer_run(Env e, Term* f, IoWork* w) {
+  Cursor c = XCreateFontCursor(x_dpy, (u32)f[1]);
+  XGrabPointer(x_dpy, x_root, False, (u32)f[0], GrabModeAsync, GrabModeAsync,
+    None, c, CurrentTime);
+  return x_ok(0);
+}
+static void __attribute__((constructor)) x_grab_pointer_use(void) {
+  io_eff(CID(grab_pointer), x_grab_pointer_run);
+}
+#endif
+
+#ifdef CID(ungrab_pointer)
+Term x_ungrab_pointer_run(Env e, Term* f, IoWork* w) {
+  XUngrabPointer(x_dpy, CurrentTime);
+  return x_ok(0);
+}
+static void __attribute__((constructor)) x_ungrab_pointer_use(void) {
+  io_eff(CID(ungrab_pointer), x_ungrab_pointer_run);
 }
 #endif
 
@@ -719,5 +859,63 @@ Term x_drop_events_run(Env e, Term* f, IoWork* w) {
 }
 static void __attribute__((constructor)) x_drop_events_use(void) {
   io_eff(CID(drop_events), x_drop_events_run);
+}
+#endif
+
+// Not X: the system calls xmonad's restart and its state file need, besides
+// Bend's own.
+
+// X.mkdir(path): mkdir with mode 0777 (less the umask); 0 or errno
+#ifdef CID(mkdir)
+Term x_mkdir_run(Env e, Term* f, IoWork* w) {
+  u64 n = 0;
+  char* path = io_cstr(e, f[0], &n);
+  int r = mkdir(path, 0777) == 0 ? 0 : errno;
+  free(path);
+  return x_ok(r);
+}
+static void __attribute__((constructor)) x_mkdir_use(void) {
+  io_eff(CID(mkdir), x_mkdir_run);
+}
+#endif
+
+// X.unlink(path): 0 or errno
+#ifdef CID(unlink)
+Term x_unlink_run(Env e, Term* f, IoWork* w) {
+  u64 n = 0;
+  char* path = io_cstr(e, f[0], &n);
+  int r = unlink(path) == 0 ? 0 : errno;
+  free(path);
+  return x_ok(r);
+}
+static void __attribute__((constructor)) x_unlink_use(void) {
+  io_eff(CID(unlink), x_unlink_run);
+}
+#endif
+
+// X.exec(program): xmonad's restart (executeFile prog True [] Nothing):
+// the display flushed (its connection closes on exec), the signal mask
+// cleared (the runtime's threads may block some, and exec keeps the mask),
+// then program in this process's place, found by PATH, with no arguments.
+// Answers only if exec fails: errno, the mask as it was.
+#ifdef CID(exec)
+Term x_exec_run(Env e, Term* f, IoWork* w) {
+  u64 n = 0;
+  char* prog = io_cstr(e, f[0], &n);
+  sigset_t none, old;
+  if (x_dpy != NULL) {
+    XFlush(x_dpy);
+    fcntl(ConnectionNumber(x_dpy), F_SETFD, FD_CLOEXEC);
+  }
+  sigemptyset(&none);
+  pthread_sigmask(SIG_SETMASK, &none, &old);
+  execlp(prog, prog, (char*)NULL);
+  int r = errno;
+  pthread_sigmask(SIG_SETMASK, &old, NULL);
+  free(prog);
+  return x_ok(r);
+}
+static void __attribute__((constructor)) x_exec_use(void) {
+  io_eff(CID(exec), x_exec_run);
 }
 #endif

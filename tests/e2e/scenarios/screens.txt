@@ -1,0 +1,32 @@
+# Two screens (run with SCREENS="1280x800 1024x768"): workspaces on each,
+# the focus following the pointer between them, windows sent to the other
+# screen, a floating window dragged from one to the other
+spawn t1
+spawn t2
+key alt+e
+spawn t3
+spawn t4
+pointer 300 300
+key alt+shift+e
+pointer 1800 400
+key alt+j
+key alt+shift+w
+key alt+w
+key alt+3
+spawn t5
+key alt+e
+key alt+3
+key alt+e
+spawn t6 fixed 300 200
+drag 1 640 400 1700 300
+key alt+w
+drag 1 1700 300 200 200
+pointer 2000 700
+drag 3 1500 200 2300 790
+key alt+t
+key alt+space
+key alt+shift+1
+pointer 100 100
+key alt+2
+key alt+e
+key alt+1

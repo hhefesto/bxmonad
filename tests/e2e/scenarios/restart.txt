@@ -1,0 +1,26 @@
+# xmonad --restart: the state saved (workspaces, layouts, focus, floats),
+# the window manager run again, the state read back
+spawn ta
+spawn tb
+spawn tc
+key alt+space
+key alt+j
+key alt+2
+spawn td
+spawn te
+key alt+l
+spawn tf fixed 200 100
+spawn tg class MPlayer
+key alt+shift+3
+key alt+1
+key alt+k
+restart
+key alt+j
+key alt+2
+key alt+space
+key alt+3
+key alt+1
+restart
+key alt+shift+j
+key alt+j
+key alt+Return

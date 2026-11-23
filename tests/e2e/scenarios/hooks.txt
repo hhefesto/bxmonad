@@ -1,0 +1,15 @@
+# The manageHook: windows of class MPlayer or mplayer2 float where they
+# asked to be; other classes tile
+spawn t1
+spawn tm1 class MPlayer
+spawn t2
+spawn tm2 class mplayer2
+spawn tx1 class XTerm
+key alt+j
+key alt+t
+key alt+space
+spawn tm3 class MPlayer
+key alt+shift+c
+key alt+2
+spawn tm4 class mplayer2
+key alt+1

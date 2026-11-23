@@ -1,2 +1,4 @@
 tests/Cases.bend
 tests/LayoutCases.bend
+tests/StateCases.bend
+result

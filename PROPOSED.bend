@@ -604,6 +604,28 @@ law handle_other:
   for st: C.XState
   {O.handle(c, st, C.EvOther{}) == O.nop(st) : C.Step}
 
+# xmonad --restart: the XMONAD_RESTART ClientMessage asks for a restart (the
+# state written to the state file, the program run again) and changes
+# nothing yet.
+law handle_restart:
+  for root: U32
+  for nbc: U32
+  for fbc: U32
+  for +a: U32
+  for st: C.XState
+  {O.handle(C.Conf{root, nbc, fbc, a}, st, C.EvClientMessage{a}) == C.Step{st, [C.Restart{}]} : C.Step}
+
+# A ClientMessage of any other type changes nothing and asks X for nothing.
+law handle_message_other:
+  for root: U32
+  for nbc: U32
+  for fbc: U32
+  for +a: U32
+  for +t: U32
+  for st: C.XState
+  for h: {U32.is_eq(t, a) == False{} : Bool}
+  {O.handle(C.Conf{root, nbc, fbc, a}, st, C.EvClientMessage{t}) == O.nop(st) : C.Step}
+
 # windows f leaves the windowset at f's answer, the layouts of the
 # workspaces it hid told Hide (xmonad's windows: modify, then
 # sendMessageWithNoRefresh Hide to each).
@@ -613,9 +635,10 @@ law windows_ws:
   for m: List<&2, U32>
   for p: List<&2, C.Pending>
   for n: U32
+  for d: Maybe<&2, C.Drag>
   for +new: C.WindowSet()
   for mouse: Bool
-  {O.st.ws(O.step.st(O.windows(c, C.XState{old, m, p, n}, new, mouse))) == O.ws.hideLayouts(O.scr.tags(C.ws.screens(old)), new) : C.WindowSet()}
+  {O.st.ws(O.step.st(O.windows(c, C.XState{old, m, p, n, d}, new, mouse))) == O.ws.hideLayouts(O.scr.tags(C.ws.screens(old)), new) : C.WindowSet()}
 
 # ... and keeps the numlock mask.
 law windows_numlock:
@@ -624,9 +647,10 @@ law windows_numlock:
   for m: List<&2, U32>
   for p: List<&2, C.Pending>
   for +n: U32
+  for d: Maybe<&2, C.Drag>
   for new: C.WindowSet()
   for mouse: Bool
-  {O.st.numlock(O.step.st(O.windows(c, C.XState{old, m, p, n}, new, mouse))) == n : U32}
+  {O.st.numlock(O.step.st(O.windows(c, C.XState{old, m, p, n, d}, new, mouse))) == n : U32}
 
 # On one screen with no floating windows, the windows go where the layout
 # puts them, all of the workspace's (windows: flt is empty, tiled the
@@ -754,3 +778,152 @@ law contents_no_hints:
 law pending_once:
   for +w: U32
   {O.pending.get(w, O.pending.inc(w, Nil{})) == 1n : Nat}
+
+# The mouse drags (mouseDrag, mouseMoveWindow, mouseResizeWindow, and
+# XMonad.Main's ButtonRelease and MotionNotify)
+# ---------------------------------------------------------------------
+
+# With no drag holding the pointer, a button release and a motion change
+# nothing and ask X for nothing (broadcastMessage: no default layout
+# answers an Event).
+law release_idle:
+  for c: C.Conf
+  for +s: C.WindowSet()
+  for +m: List<&2, U32>
+  for +p: List<&2, C.Pending>
+  for +n: U32
+  {O.handle(c, C.XState{s, m, p, n, None{}}, C.EvRelease{}) == O.nop(C.XState{s, m, p, n, None{}}) : C.Step}
+
+law motion_idle:
+  for c: C.Conf
+  for +s: C.WindowSet()
+  for +m: List<&2, U32>
+  for +p: List<&2, C.Pending>
+  for +n: U32
+  for x: U32
+  for y: U32
+  {O.handle(c, C.XState{s, m, p, n, None{}}, C.EvMotion{x, y}) == O.nop(C.XState{s, m, p, n, None{}}) : C.Step}
+
+# A release ends the drag: the pointer let go, the window floated where
+# it is, and no drag held after.
+law release_ends:
+  for c: C.Conf
+  for s: C.WindowSet()
+  for m: List<&2, U32>
+  for p: List<&2, C.Pending>
+  for n: U32
+  for +d: C.Drag
+  {O.handle(c, C.XState{s, m, p, n, Some{d}}, C.EvRelease{}) == C.Step{C.XState{s, m, p, n, None{}}, [C.UngrabPointer{}, C.FloatWin{O.drag.win(d)}]} : C.Step}
+
+# Moving: the window goes as far as the pointer went since the drag
+# began, is floated there, and the motion queued meanwhile is dropped;
+# the drag goes on.
+law move_follows:
+  for c: C.Conf
+  for +s: C.WindowSet()
+  for +m: List<&2, U32>
+  for +p: List<&2, C.Pending>
+  for +n: U32
+  for +w: U32
+  for +wx: U32
+  for +wy: U32
+  for +ox: U32
+  for +oy: U32
+  for +x: U32
+  for +y: U32
+  {O.handle(c, C.XState{s, m, p, n, Some{C.DragMove{w, wx, wy, ox, oy}}}, C.EvMotion{x, y}) == C.Step{C.XState{s, m, p, n, Some{C.DragMove{w, wx, wy, ox, oy}}}, [C.MoveWin{w, U32.add(wx, U32.sub(x, ox)), U32.add(wy, U32.sub(y, oy))}, C.FloatWin{w}, C.DropEvents{64}]} : C.Step}
+
+# Resizing with no size hints: the window's size reaches the pointer, at
+# least 1 x 1 when the pointer is left of or above its corner.
+law resize_follows:
+  for c: C.Conf
+  for +s: C.WindowSet()
+  for +m: List<&2, U32>
+  for +p: List<&2, C.Pending>
+  for +n: U32
+  for +w: U32
+  for +wx: U32
+  for +wy: U32
+  for +x: U32
+  for +y: U32
+  {O.handle(c, C.XState{s, m, p, n, Some{C.DragResize{w, wx, wy, C.Hints.none()}}}, C.EvMotion{x, y}) == C.Step{C.XState{s, m, p, n, Some{C.DragResize{w, wx, wy, C.Hints.none()}}}, [C.ResizeWin{w, O.i32.atLeast1(U32.sub(x, wx)), O.i32.atLeast1(U32.sub(y, wy))}, C.FloatWin{w}, C.DropEvents{64}]} : C.Step}
+
+law resize_at_least_one:
+  {O.hints.contents.pos(C.Hints.none(), 4294967196, 0) == O.Dim{1, 1} : O.Dim}
+
+# A drag starts only when none holds the pointer (mouseDragCursor's
+# "already dragging" case does nothing).
+law drag_once:
+  for +s: C.WindowSet()
+  for +m: List<&2, U32>
+  for +p: List<&2, C.Pending>
+  for +n: U32
+  for +d0: C.Drag
+  for +g: U32
+  for d: C.Drag
+  {O.drag.start(C.XState{s, m, p, n, Some{d0}}, g, d) == O.nop(C.XState{s, m, p, n, Some{d0}}) : C.Step}
+
+law drag_start:
+  for +s: C.WindowSet()
+  for +m: List<&2, U32>
+  for +p: List<&2, C.Pending>
+  for +n: U32
+  for +g: U32
+  for +d: C.Drag
+  {O.drag.start(C.XState{s, m, p, n, None{}}, g, d) == C.Step{C.XState{s, m, p, n, Some{d}}, [C.GrabPointer{g}]} : C.Step}
+
+# The root's button grabs: mod-button1, 2 and 3, each with numlock and
+# capslock on or off.
+law grab_buttons:
+  for +r: U32
+  {O.grabButtons(r, 16) == [C.UngrabButtons{r}, C.GrabButton{r, 1, 8, 0, 1, 0}, C.GrabButton{r, 1, 24, 0, 1, 0}, C.GrabButton{r, 1, 10, 0, 1, 0}, C.GrabButton{r, 1, 26, 0, 1, 0}, C.GrabButton{r, 2, 8, 0, 1, 0}, C.GrabButton{r, 2, 24, 0, 1, 0}, C.GrabButton{r, 2, 10, 0, 1, 0}, C.GrabButton{r, 2, 26, 0, 1, 0}, C.GrabButton{r, 3, 8, 0, 1, 0}, C.GrabButton{r, 3, 24, 0, 1, 0}, C.GrabButton{r, 3, 10, 0, 1, 0}, C.GrabButton{r, 3, 26, 0, 1, 0}] : List<&2, C.Cmd>}
+
+# mod-button1 on the root focuses the window under the pointer, then asks
+# for its move (mouseMoveWindow, then windows shiftMaster).
+law mod_button1:
+  for +c: C.Conf
+  for +st: C.XState
+  for +sub: U32
+  for +x: U32
+  for +y: U32
+  {O.button.act(c, st, C.MMove{}, sub, x, y) == O.step.then(O.focus(c, st, sub, Some{O.Pos{x, y}}), [C.MouseMove{sub}]) : C.Step}
+
+# Screens (getCleanedScreenInfo's nubScreens, rescreen)
+# ---------------------------------------------------
+
+# Two screens side by side are both kept.
+law nub_side_by_side:
+  {O.nubScreens([L.Rectangle{0, 0, 1280, 800}, L.Rectangle{1280, 0, 1024, 768}]) == [L.Rectangle{0, 0, 1280, 800}, L.Rectangle{1280, 0, 1024, 768}] : List<&2, L.Rectangle>}
+
+# A screen inside another (a smaller mirror) is dropped.
+law nub_inside:
+  {O.nubScreens([L.Rectangle{0, 0, 1024, 768}, L.Rectangle{0, 0, 1280, 800}]) == [L.Rectangle{0, 0, 1280, 800}] : List<&2, L.Rectangle>}
+
+# The same screen twice (a mirror) is kept once.
+law nub_twice:
+  {O.nubScreens([L.Rectangle{0, 0, 1280, 800}, L.Rectangle{0, 0, 1280, 800}]) == [L.Rectangle{0, 0, 1280, 800}] : List<&2, L.Rectangle>}
+
+# A screen left of the origin (x = -1024) is not inside one right of it:
+# positions compare as signed.
+law nub_left_of_origin:
+  {O.nubScreens([L.Rectangle{4294966272, 0, 1024, 768}, L.Rectangle{0, 0, 1280, 800}]) == [L.Rectangle{4294966272, 0, 1024, 768}, L.Rectangle{0, 0, 1280, 800}] : List<&2, L.Rectangle>}
+
+# With no screens, rescreen changes nothing and asks X for nothing.
+law rescreen_none:
+  for c: C.Conf
+  for +st: C.XState
+  {O.rescreen(c, st, Nil{}) == O.nop(st) : C.Step}
+
+# The manageHook: MPlayer's and mplayer2's windows float; others (a window
+# without WM_CLASS has the class "") don't.
+law hook_mplayer:
+  {O.manageHook.floats("MPlayer") == True{} : Bool}
+
+law hook_mplayer2:
+  {O.manageHook.floats("mplayer2") == True{} : Bool}
+
+law hook_other:
+  {O.manageHook.floats("XTerm") == False{} : Bool}
+
+law hook_none:
+  {O.manageHook.floats("") == False{} : Bool}

@@ -20,6 +20,7 @@ import ./StackSet.bend as W
 import ./Layout.bend as L
 import ./Core.bend as C
 import ./Operations.bend as O
+import ./StateFile.bend as SF
 import ./X.bend as X
 
 # Decoding X's words ---------------------------------------------------------------
@@ -44,6 +45,14 @@ def words.any(ws: List<&2, U32>) -> Bool:
       False{}
     case _ <> _:
       True{}
+
+# a String of X's bytes, a word each
+def words.string(ws: List<&2, U32>) -> String:
+  match ws:
+    case Nil{}:
+      ""
+    case c <> rest:
+      SCon{Char.from_u32(c), words.string(rest)}
 
 def pixel.of(ws: List<&2, U32>) -> U32:
   match ws:
@@ -75,6 +84,21 @@ def decode.button(ws: List<&2, U32>) -> Evt:
       Evt{C.EvButton{w, b, m, s, x, y}, t}
     case _:
       evt.other()
+
+def decode.motion(ws: List<&2, U32>) -> Evt:
+  match ws:
+    case x <> y <> _:
+      Evt{C.EvMotion{x, y}, 0}
+    case _:
+      evt.other()
+
+# a ButtonRelease's time (what the drag's end uses of it)
+def decode.release(ws: List<&2, U32>) -> Evt:
+  match ws:
+    case _ <> _ <> _ <> _ <> _ <> _ <> t <> _:
+      Evt{C.EvRelease{}, t}
+    case _:
+      Evt{C.EvRelease{}, 0}
 
 def decode.enter(ws: List<&2, U32>, p: List<&2, U32>) -> Evt:
   match ws p:
@@ -120,6 +144,14 @@ def decode.confreq(ws: List<&2, U32>, a: List<&2, U32>) -> Evt:
     case _:
       evt.other()
 
+# a ClientMessage: its window, then its message type
+def decode.client(ws: List<&2, U32>) -> Evt:
+  match ws:
+    case _ <> m <> _:
+      Evt{C.EvClientMessage{m}, 0}
+    case _:
+      evt.other()
+
 def decode.mapping(ws: List<&2, U32>) -> Evt:
   match ws:
     case r <> _:
@@ -141,6 +173,10 @@ def enrich.t(t: Nat, +rest: List<&2, U32>) -> IO(Evt):
       IO.pure(Evt, decode.key(rest))
     case 4n:
       IO.pure(Evt, decode.button(rest))
+    case 5n:
+      IO.pure(Evt, decode.release(rest))
+    case 6n:
+      IO.pure(Evt, decode.motion(rest))
     case 7n:
       do IO<Evt>:
         p : List<&2, U32> <- X.pointer()
@@ -157,13 +193,16 @@ def enrich.t(t: Nat, +rest: List<&2, U32>) -> IO(Evt):
         a : List<&2, U32> <- X.attrs(w)
         h : List<&2, U32> <- X.normal_hints(w)
         tr : List<&2, U32> <- X.transient_for(w)
-        IO.pure(Evt, Evt{C.EvMapRequest{w, attrs.of(a), hints.of(h), words.any(tr)}, 0})
+        cl : List<&2, U32> <- X.class_hint(w)
+        IO.pure(Evt, Evt{C.EvMapRequest{w, attrs.of(a), hints.of(h), words.any(tr), words.string(cl)}, 0})
     case 22n:
       IO.pure(Evt, decode.confnotify(rest))
     case 23n:
       do IO<Evt>:
         a : List<&2, U32> <- X.attrs(decode.window(rest))
         IO.pure(Evt, decode.confreq(rest, a))
+    case 33n:
+      IO.pure(Evt, decode.client(rest))
     case 34n:
       IO.pure(Evt, decode.mapping(rest))
     case _:
@@ -175,6 +214,191 @@ def enrich(ws: List<&2, U32>) -> IO(Evt):
       enrich.t(U32.to_nat(t), rest)
     case Nil{}:
       IO.pure(Evt, evt.other())
+
+# Directories and the state file ---------------------------------------------------
+
+def env.of(r: Result<&1, &1, U32 & String, String>) -> Maybe<&2, String>:
+  match r:
+    case Done{v}:
+      Some{v}
+    case Fail{_}:
+      None{}
+
+# an environment variable, if set
+def getEnv(name: String) -> IO(Maybe<&2, String>):
+  do IO<Maybe<&2, String>>:
+    r : Result<&1, &1, U32 & String, String> <- IO.get_env(name)
+    IO.pure(Maybe<&2, String>, env.of(r))
+
+def exists.of(r: Result<&1, &1, U32 & String, File>) -> IO(Bool):
+  match r:
+    case Done{f}:
+      do IO<Bool>:
+        Unit <- File.close(f)
+        IO.pure(Bool, True{})
+    case Fail{_}:
+      IO.pure(Bool, False{})
+
+# doesFileExist (a file that opens for reading)
+def fileExists(path: String) -> IO(Bool):
+  do IO<Bool>:
+    r : Result<&1, &1, U32 & String, File> <- File.open(path, "r")
+    exists.of(r)
+
+def str.some(s: String) -> Bool:
+  match s:
+    case SNil{}:
+      False{}
+    case SCon{_, _}:
+      True{}
+
+# the directories on the way to a path, outermost first, then the path:
+# "/a/b/c" gives "/a", "/a/b", "/a/b/c" (done: the part of it read)
+def path.prefixes(s: String, +done: String) -> List<&2, String>:
+  match s:
+    case SNil{}:
+      [done]
+    case SCon{+ch, +rest}:
+      W.Bool.if(List<&2, String>, Bool.and(U32.is_eq(Char.to_u32(ch), 47), str.some(done)), _ => done <> path.prefixes(rest, String.append(done, "/")), _ => path.prefixes(rest, String.append(done, SCon{ch, SNil{}})))
+
+def mkdir.each(ps: List<&2, String>) -> IO(Unit):
+  match ps:
+    case Nil{}:
+      IO.pure(Unit, Unit{})
+    case p <> rest:
+      do IO<Unit>:
+        r : U32 <- X.mkdir(p)
+        mkdir.each(rest)
+
+# createDirectoryIfMissing True
+def mkdirs(+path: String) -> IO(Unit):
+  mkdir.each(path.prefixes(path, ""))
+
+# getXdgDirectory XdgData "xmonad": $XDG_DATA_HOME/xmonad, or (unset, or
+# not an absolute path) ~/.local/share/xmonad
+def dataDir.xdg(+home: String, x: Maybe<&2, String>) -> String:
+  match x:
+    case Some{SCon{+ch, rest}}:
+      Bool.pick(String, U32.is_eq(Char.to_u32(ch), 47), String.append(SCon{ch, rest}, "/xmonad"), String.append(home, "/.local/share/xmonad"))
+    case _:
+      String.append(home, "/.local/share/xmonad")
+
+def dataDir.pick(on: Bool, +xm: String, +xdg: String) -> IO(String):
+  match on:
+    case True{}:
+      IO.pure(String, xm)
+    case False{}:
+      do IO<String>:
+        Unit <- mkdirs(xdg)
+        IO.pure(String, xdg)
+
+def dataDir.home(+home: String) -> IO(String):
+  +xm = String.append(home, "/.xmonad")
+  do IO<String>:
+    a : Bool <- fileExists(String.append(xm, "/xmonad.hs"))
+    b : Bool <- fileExists(String.append(xm, "/build"))
+    x : Maybe<&2, String> <- getEnv("XDG_DATA_HOME")
+    dataDir.pick(Bool.or(a, b), xm, dataDir.xdg(home, x))
+
+def str.or(m: Maybe<&2, String>, +d: String) -> String:
+  match m:
+    case Some{s}:
+      s
+    case None{}:
+      d
+
+def dataDir.getEnv(d: Maybe<&2, String>, c: Maybe<&2, String>, k: Maybe<&2, String>) -> IO(String):
+  match d c k:
+    case Some{x} Some{_} Some{_}:
+      IO.pure(String, x)
+    case _ _ _:
+      do IO<String>:
+        h : Maybe<&2, String> <- getEnv("HOME")
+        dataDir.home(str.or(h, ""))
+
+# getDirectories' dataDir: XMONAD_DATA_DIR, when XMONAD_CONFIG_DIR and
+# XMONAD_CACHE_DIR are set too; else ~/.xmonad, if it has xmonad.hs or a
+# build script; else the XDG one (made if missing; xmonad also makes the
+# XDG config and cache directories, which xmonad-bend does not use)
+def getDataDir(u: Unit) -> IO(String):
+  do IO<String>:
+    d : Maybe<&2, String> <- getEnv("XMONAD_DATA_DIR")
+    c : Maybe<&2, String> <- getEnv("XMONAD_CONFIG_DIR")
+    k : Maybe<&2, String> <- getEnv("XMONAD_CACHE_DIR")
+    dataDir.getEnv(d, c, k)
+
+# stateFileName
+def state.path(d: String) -> String:
+  String.append(d, "/xmonad.state")
+
+def file.close(w: File & Result<&1, &1, U32 & String, Unit>) -> IO(Unit):
+  match w:
+    case Tuple{f, _}:
+      File.close(f)
+
+def state.put(r: Result<&1, &1, U32 & String, File>, text: String) -> IO(Unit):
+  match r:
+    case Done{f}:
+      do IO<Unit>:
+        w : File & Result<&1, &1, U32 & String, Unit> <- File.write(f, text)
+        file.close(w)
+    case Fail{_}:
+      IO.pure(Unit, Unit{})
+
+# writeFile path text, a failure ignored (catchIO)
+def state.write(path: String, text: String) -> IO(Unit):
+  do IO<Unit>:
+    r : Result<&1, &1, U32 & String, File> <- File.open(path, "w")
+    state.put(r, text)
+
+# the rest of a file's text after acc, read a MiB at a time, then the file
+# closed ("" if a read fails: it reads as no state)
+def file.text(fuel: Nat, acc: String, r: File & Result<&1, &1, U32 & String, String>) -> IO(String):
+  match fuel r:
+    case 1n+f Tuple{file, Done{SCon{h, t}}}:
+      do IO<String>:
+        r2 : File & Result<&1, &1, U32 & String, String> <- File.read(file, 1048576)
+        file.text(f, String.append(acc, SCon{h, t}), r2)
+    case _ Tuple{file, Done{SNil{}}}:
+      do IO<String>:
+        Unit <- File.close(file)
+        IO.pure(String, acc)
+    case _ Tuple{file, _}:
+      do IO<String>:
+        Unit <- File.close(file)
+        IO.pure(String, "")
+
+def state.got(+path: String, r: Result<&1, &1, U32 & String, File>) -> IO(Maybe<&2, C.WindowSet()>):
+  match r:
+    case Done{f}:
+      do IO<Maybe<&2, C.WindowSet()>>:
+        r2 : File & Result<&1, &1, U32 & String, String> <- File.read(f, 1048576)
+        text : String <- file.text(4096n, "", r2)
+        u : U32 <- X.unlink(path)
+        IO.pure(Maybe<&2, C.WindowSet()>, SF.read(text))
+    case Fail{_}:
+      IO.pure(Maybe<&2, C.WindowSet()>, None{})
+
+# readStateFile, if the file is there: its windowset (None if it does not
+# read), the file removed
+def state.read(+path: String) -> IO(Maybe<&2, C.WindowSet()>):
+  do IO<Maybe<&2, C.WindowSet()>>:
+    r : Result<&1, &1, U32 & String, File> <- File.open(path, "r")
+    state.got(path, r)
+
+def program.of(as: List<String>) -> String:
+  match as:
+    case p <> _:
+      p
+    case Nil{}:
+      "xmonad-bend"
+
+# the program to run on a restart: this one, as it was invoked (xmonad
+# runs "xmonad" from PATH, its launcher, which runs the user's build)
+def getProgram(u: Unit) -> IO(String):
+  do IO<String>:
+    as : List<String> <- IO.args()
+    IO.pure(String, program.of(as))
 
 # The loop ---------------------------------------------------------------------
 
@@ -195,8 +419,8 @@ def job.then(+t: U32, s: C.Step, rest: List<&2, C.Cmd>) -> Job:
 
 def st.setNumlock(s: C.XState, n: U32) -> C.XState:
   match s:
-    case C.XState{w, m, p, _}:
-      C.XState{w, m, p, n}
+    case C.XState{w, m, p, _, d}:
+      C.XState{w, m, p, n, d}
 
 # cacheNumlockMask, then grabKeys
 def job.numlock(+t: U32, st: C.XState, +nl: U32, rest: List<&2, C.Cmd>) -> Job:
@@ -207,16 +431,43 @@ def atoms.state(a: O.Atoms) -> U32:
     case O.Atoms{s, _, _, _}:
       s
 
-def rects.of(+ws: List<&2, U32>) -> List<&2, L.Rectangle>:
+# the root's rectangle, from its attributes
+def rects.of(ws: List<&2, U32>) -> List<&2, L.Rectangle>:
   match ws:
-    case _ <> _ <> w <> h <> _:
-      [L.Rectangle{0, 0, w, h}]
+    case x <> y <> w <> h <> _:
+      [L.Rectangle{x, y, w, h}]
     case _:
       Nil{}
 
+# X.xinerama's words, four to a rectangle
+def rects.of4(ws: List<&2, U32>) -> List<&2, L.Rectangle>:
+  match ws:
+    case x <> y <> w <> h <> rest:
+      L.Rectangle{x, y, w, h} <> rects.of4(rest)
+    case _:
+      Nil{}
+
+# getScreenInfo: Xinerama's screens, or (none) the root's rectangle; then
+# nubScreens (getCleanedScreenInfo)
+def screens.of(xs: List<&2, U32>, root: List<&2, L.Rectangle>) -> List<&2, L.Rectangle>:
+  match xs:
+    case Nil{}:
+      O.nubScreens(root)
+    case x <> rest:
+      O.nubScreens(rects.of4(x <> rest))
+
 # manage at startup, of a window found by scan (if not already managed)
-def manage.scan(+c: C.Conf, +st: C.XState, +w: U32, am: Maybe<&2, C.Attrs>, +h: C.Hints, tr: Bool) -> C.Step:
-  W.Bool.if(C.Step, C.ws.member(w, O.st.ws(st)), _ => O.nop(st), _ => O.manage(c, st, w, am, h, tr))
+def manage.scan(+c: C.Conf, +st: C.XState, +w: U32, am: Maybe<&2, C.Attrs>, +h: C.Hints, tr: Bool, +cls: String) -> C.Step:
+  W.Bool.if(C.Step, C.ws.member(w, O.st.ws(st)), _ => O.nop(st), _ => O.manage(c, st, w, am, h, tr, cls))
+
+# mouseMoveWindow (then windows shiftMaster), from the window's attributes
+# and the pointer's [x, y]
+def job.mouseMove(+t: U32, +c: C.Conf, st: C.XState, +w: U32, aw: List<&2, U32>, p: List<&2, U32>, rest: List<&2, C.Cmd>) -> Job:
+  match p:
+    case x <> y <> _:
+      job.then(t, O.mouseMove(c, st, w, attrs.of(aw), x, y), rest)
+    case _:
+      job.then(t, O.mouseMove(c, st, w, None{}, 0, 0), rest)
 
 def wm(fuel: Nat, +c: C.Conf, +a: O.Atoms, j: Job) -> IO(Unit):
   match fuel:
@@ -309,8 +560,9 @@ def wm(fuel: Nat, +c: C.Conf, +a: O.Atoms, j: Job) -> IO(Unit):
                 wm(k, c, a, job.then(t, O.float(c, st, w, attrs.of(aw), hints.of(hw)), rest))
             case C.Rescreen{}:
               do IO<Unit>:
+                xs : List<&2, U32> <- X.xinerama()
                 aw : List<&2, U32> <- X.attrs(O.conf.root(c))
-                wm(k, c, a, job.then(t, O.rescreen(c, st, rects.of(aw)), rest))
+                wm(k, c, a, job.then(t, O.rescreen(c, st, screens.of(xs, rects.of(aw))), rest))
             case C.Quit{}:
               IO.pure(Unit, Unit{})
             case C.SetFocus{+w}:
@@ -348,7 +600,45 @@ def wm(fuel: Nat, +c: C.Conf, +a: O.Atoms, j: Job) -> IO(Unit):
                 aw : List<&2, U32> <- X.attrs(w)
                 hw : List<&2, U32> <- X.normal_hints(w)
                 tr : List<&2, U32> <- X.transient_for(w)
-                wm(k, c, a, job.then(t, manage.scan(c, st, w, attrs.of(aw), hints.of(hw), words.any(tr)), rest))
+                cl : List<&2, U32> <- X.class_hint(w)
+                wm(k, c, a, job.then(t, manage.scan(c, st, w, attrs.of(aw), hints.of(hw), words.any(tr), words.string(cl)), rest))
+            case C.MoveWin{+w, +x0, +y0}:
+              do IO<Unit>:
+                r : U32 <- X.move(w, x0, y0)
+                wm(k, c, a, Job{t, C.Step{st, rest}})
+            case C.ResizeWin{+w, +w0, +h0}:
+              do IO<Unit>:
+                r : U32 <- X.resize(w, w0, h0)
+                wm(k, c, a, Job{t, C.Step{st, rest}})
+            case C.WarpPointer{+w, +x0, +y0}:
+              do IO<Unit>:
+                r : U32 <- X.warp(w, x0, y0)
+                wm(k, c, a, Job{t, C.Step{st, rest}})
+            case C.GrabPointer{+g}:
+              do IO<Unit>:
+                r : U32 <- X.grab_pointer(U32.or(C.ev.buttonRelease(), C.ev.pointerMotion()), g)
+                wm(k, c, a, Job{t, C.Step{st, rest}})
+            case C.UngrabPointer{}:
+              do IO<Unit>:
+                r : U32 <- X.ungrab_pointer()
+                wm(k, c, a, Job{t, C.Step{st, rest}})
+            case C.MouseMove{+w}:
+              do IO<Unit>:
+                aw : List<&2, U32> <- X.attrs(w)
+                p : List<&2, U32> <- X.pointer()
+                wm(k, c, a, job.mouseMove(t, c, st, w, aw, p, rest))
+            case C.MouseResize{+w}:
+              do IO<Unit>:
+                aw : List<&2, U32> <- X.attrs(w)
+                hw : List<&2, U32> <- X.normal_hints(w)
+                wm(k, c, a, job.then(t, O.mouseResize(c, st, w, attrs.of(aw), hints.of(hw)), rest))
+            case C.Restart{}:
+              do IO<Unit>:
+                d : String <- getDataDir(Unit{})
+                Unit <- state.write(state.path(d), SF.show(O.st.ws(st)))
+                p : String <- getProgram(Unit{})
+                r : U32 <- X.exec(p)
+                wm(k, c, a, Job{t, C.Step{st, rest}})
 
 # Startup ------------------------------------------------------------------------
 
@@ -367,14 +657,32 @@ def job.start(s: C.Step, found: List<&2, U32>) -> Job:
     case C.Step{st, cs}:
       Job{0, C.Step{st, C.GrabKeys{} <> C.GrabRootButtons{} <> C.Sync{} <> O.cmds.append(cs, manages(found))}}
 
-# launch, after the display and the windowset: grab the keys and buttons,
-# show the (empty) windowset, then manage the windows already there
-def launch(+c: C.Conf, +a: O.Atoms, m: Maybe<&2, C.WindowSet()>, found: List<&2, U32>) -> IO(Unit):
+# foldr W.delete s ws
+def restore.del(ws: List<&2, U32>, s: C.WindowSet()) -> C.WindowSet():
+  match ws:
+    case Nil{}:
+      s
+    case w <> rest:
+      C.ws.delete(w, restore.del(rest, s))
+
+# the windowset to start with: the initial one, or the state file's less
+# the windows that are no longer the root's children
+def restored(s: C.WindowSet(), saved: Maybe<&2, C.WindowSet()>, +found: List<&2, U32>) -> C.WindowSet():
+  match saved:
+    case None{}:
+      s
+    case Some{+w}:
+      restore.del(C.win.diff(C.ws.allWindows(w), found), w)
+
+# launch, after the display, the windowset and the state file: grab the
+# keys and buttons, show the windowset (the initial one, empty, or the
+# state file's), then manage the windows already there and not in it
+def launch(+c: C.Conf, +a: O.Atoms, m: Maybe<&2, C.WindowSet()>, saved: Maybe<&2, C.WindowSet()>, +found: List<&2, U32>) -> IO(Unit):
   match m:
     case None{}:
       IO.die(Unit, 1, "xmonad-bend: no workspaces or no screens")
     case Some{+s}:
-      wm(fuel(), c, a, job.start(O.windows(c, O.initialState(s), s, False{}), found))
+      wm(fuel(), c, a, job.start(O.windows(c, O.initialState(s), restored(s, saved, found), False{}), found))
 
 def main.start(r: List<&2, U32>) -> IO(Unit):
   match r:
@@ -388,7 +696,11 @@ def main.start(r: List<&2, U32>) -> IO(Unit):
         s4 : U32 <- X.atom("WM_TAKE_FOCUS")
         sc : List<&2, U32> <- X.scan(s1)
         s1b : U32 <- X.atom("WM_STATE")
-        launch(C.Conf{root, pixel.of(nb), pixel.of(fb)}, O.Atoms{s1b, s2, s3, s4}, O.initialWinset([L.Rectangle{0, 0, w, h}]), O.scan.ok(sc))
+        s5 : U32 <- X.atom("XMONAD_RESTART")
+        xs : List<&2, U32> <- X.xinerama()
+        d : String <- getDataDir(Unit{})
+        saved : Maybe<&2, C.WindowSet()> <- state.read(state.path(d))
+        launch(C.Conf{root, pixel.of(nb), pixel.of(fb), s5}, O.Atoms{s1b, s2, s3, s4}, O.initialWinset(screens.of(xs, [L.Rectangle{0, 0, w, h}])), saved, O.scan.ok(sc))
     case _:
       IO.die(Unit, 1, "xmonad-bend: cannot open the display, or another window manager is running")
 
