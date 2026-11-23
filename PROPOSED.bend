@@ -6,6 +6,8 @@
 
 import Base
 import ./StackSet.bend as W
+import ./Num.bend as N
+import ./Layout.bend as L
 
 # Stacks
 # ------
@@ -401,3 +403,192 @@ law view_idem:
   for +i: I
   for +s: W.StackSet<I, L, A, S, D>
   {W.view(~I, ~eqI, ~S, ~eqS, L, A, D, i, W.view(~I, ~eqI, ~S, ~eqS, L, A, D, i, s)) == W.view(~I, ~eqI, ~S, ~eqS, L, A, D, i, s) : W.StackSet<I, L, A, S, D>}
+
+# Layouts
+# -------
+#
+# What XMonad.Layout's rectangles keep (tests/Properties/Layout/*.hs).
+
+def Rect.xw(r: L.Rectangle) -> L.Rectangle:
+  match r:
+    case L.Rectangle{x, y, w, h}:
+      L.Rectangle{x, 0, w, 0}
+
+def Rect.yh(r: L.Rectangle) -> L.Rectangle:
+  match r:
+    case L.Rectangle{x, y, w, h}:
+      L.Rectangle{0, y, 0, h}
+
+def Rect.xws(rs: List<&2, L.Rectangle>) -> List<&2, L.Rectangle>:
+  match rs:
+    case Nil{}:
+      Nil{}
+    case r <> rest:
+      Rect.xw(r) <> Rect.xws(rest)
+
+def Rect.yhs(rs: List<&2, L.Rectangle>) -> List<&2, L.Rectangle>:
+  match rs:
+    case Nil{}:
+      Nil{}
+    case r <> rest:
+      Rect.yh(r) <> Rect.yhs(rest)
+
+def Rect.rep(n: Nat, +r: L.Rectangle) -> List<&2, L.Rectangle>:
+  match n:
+    case 0n:
+      Nil{}
+    case 1n+k:
+      r <> Rect.rep(k, r)
+
+def Rects.fst(p: L.Rectangle & L.Rectangle) -> L.Rectangle:
+  match p:
+    case (a, b):
+      a
+
+def Rects.snd(p: L.Rectangle & L.Rectangle) -> L.Rectangle:
+  match p:
+    case (a, b):
+      b
+
+law mirror_twice:
+  for r: L.Rectangle
+  {L.mirrorRect(L.mirrorRect(r)) == r : L.Rectangle}
+
+# splitVertically n gives max n 1 rectangles ...
+law splitVertically_count:
+  for n: Nat
+  for r: L.Rectangle
+  {List.length(&2, L.Rectangle, L.splitVertically(n, r)) == Nat.max(n, 1n) : Nat}
+
+# ... each as wide as r and at r's x (prop_split_horizontal, turned); and
+# splitHorizontally's each as high as r and at r's y
+law splitVertically_xw:
+  for m: Nat
+  for -x: U32
+  for -y: U32
+  for -w: U32
+  for -h: U32
+  {Rect.xws(L.splitVertically(1n+m, L.Rectangle{x, y, w, h})) == Rect.rep(1n+m, L.Rectangle{x, 0, w, 0}) : List<&2, L.Rectangle>}
+
+law splitHorizontally_yh:
+  for +m: Nat
+  for +x: U32
+  for +y: U32
+  for +w: U32
+  for +h: U32
+  {Rect.yhs(L.splitHorizontally(1n+m, L.Rectangle{x, y, w, h})) == Rect.rep(1n+m, L.Rectangle{0, y, 0, h}) : List<&2, L.Rectangle>}
+
+# prop_split_vertical: splitVerticallyBy keeps x and width in both halves,
+# splitHorizontallyBy y and height
+law splitVerticallyBy_xw:
+  for f: N.Rat
+  for +r: L.Rectangle
+  {Rect.xw(Rects.fst(L.splitVerticallyBy(f, r))) == Rect.xw(r) : L.Rectangle}
+
+law splitVerticallyBy_xw2:
+  for f: N.Rat
+  for +r: L.Rectangle
+  {Rect.xw(Rects.snd(L.splitVerticallyBy(f, r))) == Rect.xw(r) : L.Rectangle}
+
+law splitHorizontallyBy_yh:
+  for f: N.Rat
+  for +r: L.Rectangle
+  {Rect.yh(Rects.fst(L.splitHorizontallyBy(f, r))) == Rect.yh(r) : L.Rectangle}
+
+law splitHorizontallyBy_yh2:
+  for f: N.Rat
+  for +r: L.Rectangle
+  {Rect.yh(Rects.snd(L.splitHorizontallyBy(f, r))) == Rect.yh(r) : L.Rectangle}
+
+# prop_tile_fullscreen: one window with one master fills the screen
+law tile_fullscreen:
+  for f: N.Rat
+  for +r: L.Rectangle
+  {L.tile(f, r, N.Int.of(1n), 1n) == [r] : List<&2, L.Rectangle>}
+
+# no windows, no places
+law run_none:
+  for -A: Data
+  for l: L.Layout
+  for +r: L.Rectangle
+  {L.Layout.run(A, l, r, None{}) == Nil{} : List<&2, L.Place<A>>}
+
+# prop_purelayout_full: Full shows the focused window, on the whole screen
+law run_full:
+  for -A: Data
+  for +r: L.Rectangle
+  for s: W.Stack<A>
+  {L.Layout.run(A, L.Full{}, r, Some{s}) == [L.Place{W.Stack.focus(A, s), r}] : List<&2, L.Place<A>>}
+
+# Mirror is the layout on the screen turned, its places turned back
+law run_mirror:
+  for -A: Data
+  for l: L.Layout
+  for +r: L.Rectangle
+  for m: Maybe<&2, W.Stack<A>>
+  {L.Layout.run(A, L.Mirror{l}, r, m) == L.Place.mirror(A, L.Layout.run(A, l, L.mirrorRect(r), m)) : List<&2, L.Place<A>>}
+
+# prop_desc_mirror, prop_desc_full
+law desc_mirror:
+  for l: L.Layout
+  {L.Layout.description(L.Mirror{l}) == "Mirror " ++ L.Layout.description(l) : String}
+
+law desc_full:
+  {L.Layout.description(L.Full{}) == "Full" : String}
+
+# prop_sendmsg_full, for every message: Full answers none
+law full_ignores:
+  for m: L.Msg
+  {L.handleMessage(L.Full{}, m) == None{} : Maybe<&2, L.Layout>}
+
+# prop_incmaster_tall: IncMasterN k adds k to the master windows
+law incmaster_tall:
+  for n: Nat
+  for k: Nat
+  for d: N.Rat
+  for f: N.Rat
+  {L.handleMessage(L.Tall{N.Int.of(n), d, f}, L.IncMasterN{N.Int.of(k)}) == Some{L.Tall{N.Int.of(Nat.add(n, k)), d, f}} : Maybe<&2, L.Layout>}
+
+# The default layout: NextLayout goes Tall, Mirror Tall, Full and back to
+# Tall; JumpToLayout goes straight to the one named
+def Cycle.next(+l: L.Layout) -> L.Layout:
+  L.Layout.orig(L.handleMessage(l, L.NextLayout{}), l)
+
+def Cycle.descs(n: Nat, +l: L.Layout) -> List<&2, String>:
+  match n:
+    case 0n:
+      Nil{}
+    case 1n+k:
+      L.Layout.description(l) <> Cycle.descs(k, Cycle.next(l))
+
+law default_cycle:
+  {Cycle.descs(4n, L.Layout.default()) == ["Tall", "Mirror Tall", "Full", "Tall"] : List<&2, String>}
+
+law default_jump_full:
+  {L.Layout.description(L.Layout.orig(L.handleMessage(L.Layout.default(), L.JumpToLayout{"Full"}), L.Layout.default())) == "Full" : String}
+
+# prop_purelayout_tall: with a ratio other than 0 and 1, Tall places every
+# window of the stack (n master windows, n >= 0) ...
+law tall_count:
+  for -A: Data
+  for +nm: Nat
+  for -d: N.Rat
+  for +frac: N.Rat
+  for +r: L.Rectangle
+  for +s: W.Stack<A>
+  for h0: {N.Rat.is_eq(frac, L.Rat.zero()) == False{} : Bool}
+  for h1: {N.Rat.is_eq(frac, L.Rat.one()) == False{} : Bool}
+  {List.length(&2, L.Place<A>, L.Layout.run(A, L.Tall{N.Int.of(nm), d, frac}, r, Some{s})) == List.length(&2, A, W.Stack.integrate(A, s)) : Nat}
+
+# ... for tile gives n windows max n 1 rectangles
+law tile_count:
+  for +f: N.Rat
+  for +r: L.Rectangle
+  for nm: Nat
+  for +n: Nat
+  {List.length(&2, L.Rectangle, L.tile(f, r, N.Int.of(nm), n)) == Nat.max(n, 1n) : Nat}
+
+# With a Choose on the left, NextLayout goes through its layouts first:
+# (Tall ||| Full) ||| Mirror Tall goes Tall, Full, Mirror Tall, Tall
+law nested_cycle:
+  {Cycle.descs(4n, L.Choose{L.CL{}, L.Choose{L.CL{}, L.Layout.tiled(), L.Full{}}, L.Mirror{L.Layout.tiled()}}) == ["Tall", "Full", "Mirror Tall", "Tall"] : List<&2, String>}

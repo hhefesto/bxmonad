@@ -3,6 +3,8 @@
 
 import Base
 import ./StackSet.bend as W
+import ./Num.bend as N
+import ./Layout.bend as L
 import ./PROPOSED.bend as Proposed
 
 # Lists
@@ -1055,3 +1057,365 @@ def view_idem.b(I, eqI, S, eqS, L, A, D, i, s, b, e):
 
 def Proposed.view_idem(I, eqI, S, eqS, L, A, D, i, s):
   view_idem.b(I, eqI, S, eqS, L, A, D, i, s, eqI(i, W.currentTag(I, L, A, S, D, s)), {==})
+
+# Layouts
+# -------
+
+def Proposed.mirror_twice(r):
+  match r:
+    case L.Rectangle{x, y, w, h}:
+      {==}
+
+law max0:
+  for m: Nat
+  {Nat.max(m, 0n) == m : Nat}
+
+def max0(m):
+  match m:
+    case 0n:
+      {==}
+    case 1n+k:
+      {==}
+
+# splitVertically's loop gives one rectangle more than its count
+law pos_count:
+  for m: Nat
+  for r: L.Rectangle
+  {List.length(&2, L.Rectangle, L.splitVertically.pos(m, r)) == 1n+m : Nat}
+
+def pos_count(m, r):
+  match m:
+    case 0n:
+      {==}
+    case 1n+ +k:
+      match r:
+        case L.Rectangle{sx, sy, sw, +sh}:
+          %pos_count(k, L.Rectangle{sx, U32.add(sy, U32.div(sh, U32.from_nat(1n+1n+k))), sw, U32.sub(sh, U32.div(sh, U32.from_nat(1n+1n+k)))}) : {List.length(&2, L.Rectangle, L.splitVertically.pos(1n+k, L.Rectangle{sx, sy, sw, sh})) == 1n+_ : Nat}
+          {==}
+
+def Proposed.splitVertically_count(n, r):
+  match n:
+    case 0n:
+      {==}
+    case 1n+ +m:
+      %Equal.sym(Nat, Nat.max(m, 0n), m, max0(m)) : {List.length(&2, L.Rectangle, L.splitVertically.pos(m, r)) == 1n+_ : Nat}
+      pos_count(m, r)
+
+law pos_xw:
+  for m: Nat
+  for -x: U32
+  for -y: U32
+  for -w: U32
+  for -h: U32
+  {Proposed.Rect.xws(L.splitVertically.pos(m, L.Rectangle{x, y, w, h})) == Proposed.Rect.rep(1n+m, L.Rectangle{x, 0, w, 0}) : List<&2, L.Rectangle>}
+
+def pos_xw(m, x, y, w, h):
+  match m:
+    case 0n:
+      {==}
+    case 1n+k:
+      %pos_xw(k, x, U32.add(y, U32.div(h, U32.from_nat(1n+1n+k))), w, U32.sub(h, U32.div(h, U32.from_nat(1n+1n+k)))) : {Proposed.Rect.xws(L.splitVertically.pos(1n+k, L.Rectangle{x, y, w, h})) == L.Rectangle{x, 0, w, 0} <> _ : List<&2, L.Rectangle>}
+      {==}
+
+def Proposed.splitVertically_xw(m, x, y, w, h):
+  pos_xw(m, x, y, w, h)
+
+# turned, the y and height of each are the x and width before
+law yh_mirror:
+  for rs: List<&2, L.Rectangle>
+  {Proposed.Rect.yhs(L.Rect.mirrorAll(rs)) == L.Rect.mirrorAll(Proposed.Rect.xws(rs)) : List<&2, L.Rectangle>}
+
+def yh_mirror(rs):
+  match rs:
+    case Nil{}:
+      {==}
+    case L.Rectangle{a, b, c, d} <> rest:
+      %yh_mirror(rest) : {Proposed.Rect.yhs(L.Rect.mirrorAll(L.Rectangle{a, b, c, d} <> rest)) == L.Rectangle{0, a, 0, c} <> _ : List<&2, L.Rectangle>}
+      {==}
+
+law mirror_rep:
+  for n: Nat
+  for +r: L.Rectangle
+  {L.Rect.mirrorAll(Proposed.Rect.rep(n, r)) == Proposed.Rect.rep(n, L.mirrorRect(r)) : List<&2, L.Rectangle>}
+
+def mirror_rep(n, r):
+  match n:
+    case 0n:
+      {==}
+    case 1n+k:
+      %mirror_rep(k, r) : {L.Rect.mirrorAll(Proposed.Rect.rep(1n+k, r)) == L.mirrorRect(r) <> _ : List<&2, L.Rectangle>}
+      {==}
+
+def Proposed.splitHorizontally_yh(m, x, y, w, h):
+  %Equal.sym(List<&2, L.Rectangle>, Proposed.Rect.yhs(L.Rect.mirrorAll(L.splitVertically(1n+m, L.Rectangle{y, x, h, w}))), L.Rect.mirrorAll(Proposed.Rect.xws(L.splitVertically(1n+m, L.Rectangle{y, x, h, w}))), yh_mirror(L.splitVertically(1n+m, L.Rectangle{y, x, h, w}))) : {_ == Proposed.Rect.rep(1n+m, L.Rectangle{0, y, 0, h}) : List<&2, L.Rectangle>}
+  %Equal.sym(List<&2, L.Rectangle>, Proposed.Rect.xws(L.splitVertically(1n+m, L.Rectangle{y, x, h, w})), Proposed.Rect.rep(1n+m, L.Rectangle{y, 0, h, 0}), pos_xw(m, y, x, h, w)) : {L.Rect.mirrorAll(_) == Proposed.Rect.rep(1n+m, L.Rectangle{0, y, 0, h}) : List<&2, L.Rectangle>}
+  mirror_rep(1n+m, L.Rectangle{y, 0, h, 0})
+
+def Proposed.splitVerticallyBy_xw(f, r):
+  match r:
+    case L.Rectangle{x, y, w, h}:
+      {==}
+
+def Proposed.splitVerticallyBy_xw2(f, r):
+  match r:
+    case L.Rectangle{x, y, w, h}:
+      {==}
+
+def Proposed.splitHorizontallyBy_yh(f, r):
+  match r:
+    case L.Rectangle{x, y, w, h}:
+      {==}
+
+def Proposed.splitHorizontallyBy_yh2(f, r):
+  match r:
+    case L.Rectangle{x, y, w, h}:
+      {==}
+
+def Proposed.tile_fullscreen(f, r):
+  {==}
+
+def Proposed.run_none(A, l, r):
+  match l:
+    case L.Full{}:
+      {==}
+    case L.Tall{n, d, f}:
+      {==}
+    case L.Mirror{x}:
+      {==}
+    case L.Choose{s, a, b}:
+      match s:
+        case L.CL{}:
+          {==}
+        case L.CR{}:
+          {==}
+
+def Proposed.run_full(A, r, s):
+  {==}
+
+def Proposed.run_mirror(A, l, r, m):
+  match m:
+    case None{}:
+      %Equal.sym(List<&2, L.Place<A>>, L.Layout.run(A, l, L.mirrorRect(r), None{}), Nil{}, Proposed.run_none(A, l, L.mirrorRect(r))) : {Nil{} == L.Place.mirror(A, _) : List<&2, L.Place<A>>}
+      {==}
+    case Some{s}:
+      {==}
+
+def Proposed.desc_mirror(l):
+  {==}
+
+def Proposed.desc_full():
+  {==}
+
+def Proposed.full_ignores(m):
+  {==}
+
+def Proposed.incmaster_tall(n, k, d, f):
+  {==}
+
+def Proposed.default_cycle():
+  {==}
+
+def Proposed.default_jump_full():
+  {==}
+
+# Tall places every window
+# ------------------------
+
+def disc(b: Bool) -> Type:
+  match b:
+    case True{}:
+      Empty
+    case False{}:
+      Unit
+
+law clash:
+  for h: {False{} == True{} : Bool}
+  Empty
+
+def clash(h):
+  %h : disc(_)
+  Unit{}
+
+def cmp.not_gt(c: Cmp) -> Type:
+  match c:
+    case LT{}:
+      Unit
+    case EQ{}:
+      Unit
+    case GT{}:
+      Empty
+
+law gt_clash:
+  for -c: Cmp
+  for h: {c == GT{} : Cmp}
+  for u: cmp.not_gt(c)
+  Empty
+
+def gt_clash(c, h, u):
+  %h : cmp.not_gt(_)
+  u
+
+law le_refl:
+  for k: Nat
+  {Nat.is_le(k, k) == True{} : Bool}
+
+def le_refl(k):
+  match k:
+    case 0n:
+      {==}
+    case 1n+j:
+      le_refl(j)
+
+law le_max1:
+  for k: Nat
+  {Nat.is_le(k, Nat.max(k, 1n)) == True{} : Bool}
+
+def le_max1(k):
+  match k:
+    case 0n:
+      {==}
+    case 1n+ +j:
+      %Equal.sym(Nat, Nat.max(j, 0n), j, max0(j)) : {Nat.is_le(j, _) == True{} : Bool}
+      le_refl(j)
+
+law zip_len:
+  for -A: Data
+  for xs: List<&2, A>
+  for ys: List<&2, L.Rectangle>
+  for h: {Nat.is_le(List.length(&2, A, xs), List.length(&2, L.Rectangle, ys)) == True{} : Bool}
+  {List.length(&2, L.Place<A>, L.Place.zip(A, xs, ys)) == List.length(&2, A, xs) : Nat}
+
+def zip_len(A, xs, ys, h):
+  match xs:
+    case Nil{}:
+      match ys:
+        case Nil{}:
+          {==}
+        case y <> yt:
+          {==}
+    case x <> xt:
+      match ys:
+        case Nil{}:
+          ex_falso({List.length(&2, L.Place<A>, L.Place.zip(A, x <> xt, Nil{})) == List.length(&2, A, x <> xt) : Nat}, clash(h))
+        case y <> yt:
+          %zip_len(A, xt, yt, h) : {1n+List.length(&2, L.Place<A>, L.Place.zip(A, xt, yt)) == 1n+_ : Nat}
+          {==}
+
+law len_append:
+  for -A: Data
+  for xs: List<&2, A>
+  for -ys: List<&2, A>
+  {List.length(&2, A, List.append(&2, A, xs, ys)) == Nat.add(List.length(&2, A, xs), List.length(&2, A, ys)) : Nat}
+
+def len_append(A, xs, ys):
+  match xs:
+    case Nil{}:
+      {==}
+    case x <> rest:
+      %len_append(A, rest, ys) : {1n+List.length(&2, A, List.append(&2, A, rest, ys)) == 1n+_ : Nat}
+      {==}
+
+# the second column: m windows before it, n - m rows in it, n in all
+law sub_len:
+  for n: Nat
+  for m: Nat
+  for r: L.Rectangle
+  for h: {Nat.cmp(n, m) == GT{} : Cmp}
+  {Nat.add(m, List.length(&2, L.Rectangle, L.splitVertically.int(N.Int.sub.nat(n, m), r))) == n : Nat}
+
+def sub_len(n, m, r, h):
+  match n:
+    case 0n:
+      match m:
+        case 0n:
+          ex_falso({Nat.add(0n, List.length(&2, L.Rectangle, L.splitVertically.int(N.Int.sub.nat(0n, 0n), r))) == 0n : Nat}, gt_clash(EQ{}, h, Unit{}))
+        case 1n+q:
+          ex_falso({Nat.add(1n+q, List.length(&2, L.Rectangle, L.splitVertically.int(N.Int.sub.nat(0n, 1n+q), r))) == 0n : Nat}, gt_clash(LT{}, h, Unit{}))
+    case 1n+a:
+      match m:
+        case 0n:
+          pos_count(a, r)
+        case 1n+b:
+          %sub_len(a, b, r, h) : {1n+Nat.add(b, List.length(&2, L.Rectangle, L.splitVertically.int(N.Int.sub.nat(a, b), r))) == 1n+_ : Nat}
+          {==}
+
+law max_pos:
+  for n: Nat
+  for -p: Nat
+  for h: {Nat.cmp(n, 1n+p) == GT{} : Cmp}
+  {n == Nat.max(n, 1n) : Nat}
+
+def max_pos(n, p, h):
+  match n:
+    case 0n:
+      ex_falso({0n == Nat.max(0n, 1n) : Nat}, gt_clash(LT{}, h, Unit{}))
+    case 1n+a:
+      %Equal.sym(Nat, Nat.max(a, 0n), a, max0(a)) : {1n+a == 1n+_ : Nat}
+      {==}
+
+law tile_count.gt:
+  for +f: N.Rat
+  for r: L.Rectangle
+  for +p: Nat
+  for +n: Nat
+  for +e: {Nat.cmp(n, 1n+p) == GT{} : Cmp}
+  {List.length(&2, L.Rectangle, L.tile.cols(N.Int.of(1n+p), n, L.splitHorizontallyBy(f, r))) == Nat.max(n, 1n) : Nat}
+
+def tile_count.gt(f, r, p, n, e):
+  match r:
+    case L.Rectangle{+sx, +sy, +sw, +sh}:
+      %Equal.sym(Nat, List.length(&2, L.Rectangle, List.append(&2, L.Rectangle, L.splitVertically.pos(p, L.Rectangle{sx, sy, L.Rect.scale(sw, f), sh}), L.splitVertically.int(N.Int.sub.nat(n, 1n+p), L.Rectangle{U32.add(sx, L.Rect.scale(sw, f)), sy, U32.sub(sw, L.Rect.scale(sw, f)), sh}))), Nat.add(List.length(&2, L.Rectangle, L.splitVertically.pos(p, L.Rectangle{sx, sy, L.Rect.scale(sw, f), sh})), List.length(&2, L.Rectangle, L.splitVertically.int(N.Int.sub.nat(n, 1n+p), L.Rectangle{U32.add(sx, L.Rect.scale(sw, f)), sy, U32.sub(sw, L.Rect.scale(sw, f)), sh}))), len_append(L.Rectangle, L.splitVertically.pos(p, L.Rectangle{sx, sy, L.Rect.scale(sw, f), sh}), L.splitVertically.int(N.Int.sub.nat(n, 1n+p), L.Rectangle{U32.add(sx, L.Rect.scale(sw, f)), sy, U32.sub(sw, L.Rect.scale(sw, f)), sh}))) : {_ == Nat.max(n, 1n) : Nat}
+      %Equal.sym(Nat, List.length(&2, L.Rectangle, L.splitVertically.pos(p, L.Rectangle{sx, sy, L.Rect.scale(sw, f), sh})), 1n+p, pos_count(p, L.Rectangle{sx, sy, L.Rect.scale(sw, f), sh})) : {Nat.add(_, List.length(&2, L.Rectangle, L.splitVertically.int(N.Int.sub.nat(n, 1n+p), L.Rectangle{U32.add(sx, L.Rect.scale(sw, f)), sy, U32.sub(sw, L.Rect.scale(sw, f)), sh}))) == Nat.max(n, 1n) : Nat}
+      %Equal.sym(Nat, Nat.add(1n+p, List.length(&2, L.Rectangle, L.splitVertically.int(N.Int.sub.nat(n, 1n+p), L.Rectangle{U32.add(sx, L.Rect.scale(sw, f)), sy, U32.sub(sw, L.Rect.scale(sw, f)), sh}))), n, sub_len(n, 1n+p, L.Rectangle{U32.add(sx, L.Rect.scale(sw, f)), sy, U32.sub(sw, L.Rect.scale(sw, f)), sh}, e)) : {_ == Nat.max(n, 1n) : Nat}
+      max_pos(n, p, e)
+
+law tile_count.c:
+  for +f: N.Rat
+  for +r: L.Rectangle
+  for +p: Nat
+  for +n: Nat
+  for c: Cmp
+  for +e: {Nat.cmp(n, 1n+p) == c : Cmp}
+  {List.length(&2, L.Rectangle, L.tile(f, r, N.Int.of(1n+p), n)) == Nat.max(n, 1n) : Nat}
+
+def tile_count.c(f, r, p, n, c, e):
+  match c:
+    case LT{}:
+      %Equal.sym(Cmp, Nat.cmp(n, 1n+p), LT{}, e) : {List.length(&2, L.Rectangle, W.Bool.if(List<&2, L.Rectangle>, Bool.or(Cmp.is_le(_), False{}), q => L.splitVertically(n, r), q => L.tile.cols(N.Int.of(1n+p), n, L.splitHorizontallyBy(f, r)))) == Nat.max(n, 1n) : Nat}
+      Proposed.splitVertically_count(n, r)
+    case EQ{}:
+      %Equal.sym(Cmp, Nat.cmp(n, 1n+p), EQ{}, e) : {List.length(&2, L.Rectangle, W.Bool.if(List<&2, L.Rectangle>, Bool.or(Cmp.is_le(_), False{}), q => L.splitVertically(n, r), q => L.tile.cols(N.Int.of(1n+p), n, L.splitHorizontallyBy(f, r)))) == Nat.max(n, 1n) : Nat}
+      Proposed.splitVertically_count(n, r)
+    case GT{}:
+      %Equal.sym(Cmp, Nat.cmp(n, 1n+p), GT{}, e) : {List.length(&2, L.Rectangle, W.Bool.if(List<&2, L.Rectangle>, Bool.or(Cmp.is_le(_), False{}), q => L.splitVertically(n, r), q => L.tile.cols(N.Int.of(1n+p), n, L.splitHorizontallyBy(f, r)))) == Nat.max(n, 1n) : Nat}
+      tile_count.gt(f, r, p, n, e)
+
+def Proposed.tile_count(f, r, nm, n):
+  match nm:
+    case 0n:
+      match n:
+        case 0n:
+          Proposed.splitVertically_count(0n, r)
+        case 1n+a:
+          Proposed.splitVertically_count(1n+a, r)
+    case 1n+ +p:
+      tile_count.c(f, r, p, n, Nat.cmp(n, 1n+p), {==})
+
+law tile_fits:
+  for +f: N.Rat
+  for +r: L.Rectangle
+  for nm: Nat
+  for +k: Nat
+  {Nat.is_le(k, List.length(&2, L.Rectangle, L.tile(f, r, N.Int.of(nm), k))) == True{} : Bool}
+
+def tile_fits(f, r, nm, k):
+  %Equal.sym(Nat, List.length(&2, L.Rectangle, L.tile(f, r, N.Int.of(nm), k)), Nat.max(k, 1n), Proposed.tile_count(f, r, nm, k)) : {Nat.is_le(k, _) == True{} : Bool}
+  le_max1(k)
+
+def Proposed.tall_count(A, nm, d, frac, r, s, h0, h1):
+  %Equal.sym(Bool, N.Rat.is_eq(frac, L.Rat.zero()), False{}, h0) : {List.length(&2, L.Place<A>, L.Tall.pick(A, _, N.Rat.is_eq(frac, L.Rat.one()), L.Place.zip(A, W.Stack.integrate(A, s), L.tile(frac, r, N.Int.of(nm), List.length(&2, A, W.Stack.integrate(A, s)))), N.Int.of(nm))) == List.length(&2, A, W.Stack.integrate(A, s)) : Nat}
+  %Equal.sym(Bool, N.Rat.is_eq(frac, L.Rat.one()), False{}, h1) : {List.length(&2, L.Place<A>, L.Tall.pick(A, False{}, _, L.Place.zip(A, W.Stack.integrate(A, s), L.tile(frac, r, N.Int.of(nm), List.length(&2, A, W.Stack.integrate(A, s)))), N.Int.of(nm))) == List.length(&2, A, W.Stack.integrate(A, s)) : Nat}
+  zip_len(A, W.Stack.integrate(A, s), L.tile(frac, r, N.Int.of(nm), List.length(&2, A, W.Stack.integrate(A, s))), tile_fits(frac, r, nm, List.length(&2, A, W.Stack.integrate(A, s))))
+
+def Proposed.nested_cycle():
+  {==}

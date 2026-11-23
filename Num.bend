@@ -100,3 +100,64 @@ def Rat.is_eq(a: Rat, b: Rat) -> Bool:
   match a b:
     case Rat{n, +d} Rat{m, +e}:
       Int.is_eq(Int.mul.nat(n, 1n+e), Int.mul.nat(m, 1n+d))
+
+def Rat.neg(a: Rat) -> Rat:
+  match a:
+    case Rat{n, d}:
+      Rat{Int.neg(n), d}
+
+def Rat.add(a: Rat, b: Rat) -> Rat:
+  match a b:
+    case Rat{n, +d} Rat{m, +e}:
+      Rat{Int.add(Int.mul.nat(n, 1n+e), Int.mul.nat(m, 1n+d)), Nat.sub(Nat.mul(1n+d, 1n+e), 1n)}
+
+def Rat.sub(a: Rat, b: Rat) -> Rat:
+  Rat.add(a, Rat.neg(b))
+
+def Rat.cmp(a: Rat, b: Rat) -> Cmp:
+  match a b:
+    case Rat{n, +d} Rat{m, +e}:
+      Int.cmp(Int.mul.nat(n, 1n+e), Int.mul.nat(m, 1n+d))
+
+# gcd by Euclid's steps; b shrinks at each, so 1 + b steps are enough
+def Nat.gcd.go(fuel: Nat, a: Nat, +b: Nat) -> Nat:
+  match fuel:
+    case 0n:
+      a
+    case 1n+k:
+      match b:
+        case 0n:
+          a
+        case 1n+p:
+          Nat.gcd.go(k, b, Nat.mod(a, b))
+
+def Nat.gcd(a: Nat, +b: Nat) -> Nat:
+  Nat.gcd.go(1n+b, a, b)
+
+def Int.abs.nat(a: Int) -> Nat:
+  match a:
+    case Int.Pos{n}:
+      n
+    case Int.Neg{n}:
+      1n+n
+
+# a / g for a g dividing a
+def Int.div.nat(a: Int, +g: Nat) -> Int:
+  match a:
+    case Int.Pos{n}:
+      Int.Pos{Nat.div(n, g)}
+    case Int.Neg{n}:
+      Int.Neg{Nat.sub(Nat.div(1n+n, g), 1n)}
+
+# the Rat in lowest terms, as Haskell's Rational always is
+def Rat.norm(r: Rat) -> Rat:
+  match r:
+    case Rat{+n, d}:
+      +q = Nat.add(1n, d)
+      +g = Nat.gcd(Int.abs.nat(n), q)
+      Rat{Int.div.nat(n, g), Nat.sub(Nat.div(q, g), 1n)}
+
+def Rat.show(r: Rat) -> String:
+  match r:
+    case Rat{n, d}:
+      Int.show(n) ++ "/" ++ Nat.show(1n+d)
